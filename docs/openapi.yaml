@@ -8,11 +8,11 @@ info:
     https://github.com/celsojuniorsfs/medfusion-os-web/blob/main/docs/escopo-v1.md.
     Convenções (autenticação, formato de erro) detalhadas em ./api-conventions.md.
 
-    Atualizado em 07/09/2026 com as correções da validação de escopo com o cliente: equipamentos
-    sem limite por OS (catálogo reaproveitável por cliente), valor de peça opcional +
-    valor_mao_obra, e o status ampliado (OrderStatus) — este último marcado como PROPOSTO,
-    aguardando confirmação final do cliente.
-  version: "1.1.0"
+    Atualizado em 07/09/2026 (duas rodadas de validação com o cliente): equipamentos sem limite
+    por OS (catálogo reaproveitável por cliente), valor de peça opcional + valor_mao_obra, status
+    ampliado (OrderStatus, com nao_aprovado distinto de cancelada) e notificação automática por
+    e-mail/WhatsApp na criação da OS.
+  version: "1.2.0"
   license:
     name: Proprietary
     identifier: proprietary
@@ -432,11 +432,11 @@ paths:
       summary: Transiciona o status da OS
       operationId: updateOrderStatus
       description: >
-        [PROPOSTO — ver OrderStatus] Transições: aberta→em_analise→orcamento_externo (opcional)
+        Ver OrderStatus. Transições: aberta→em_analise→orcamento_externo (opcional)
         →aguardando_aprovacao→aprovada→concluida. cancelada é alcançável a partir de qualquer
-        estado anterior a aprovada. garantia só a partir de concluida (retrabalho dentro do
-        prazo, mesma OS), e de garantia de volta para concluida. Tabela completa em
-        api-conventions.md.
+        estado anterior a aprovada. nao_aprovado só a partir de aguardando_aprovacao. garantia só
+        a partir de concluida (retrabalho dentro do prazo, mesma OS), e de garantia de volta para
+        concluida. Tabela completa em api-conventions.md.
       requestBody:
         required: true
         content:
@@ -625,18 +625,21 @@ components:
     OrderStatus:
       type: string
       description: >
-        [PROPOSTO — aguardando confirmação final do cliente, validação de 07/09/2026] Fluxo:
-        aberta → em_analise → orcamento_externo (opcional) → aguardando_aprovacao → aprovada
-        → concluida. cancelada é alcançável a partir de qualquer estado anterior a aprovada.
-        garantia é uma reabertura especial, só a partir de concluida (retrabalho dentro do
-        prazo de garantia, mesma OS) — depois volta a concluida. Ver api-conventions.md para a
-        tabela de transições.
+        Fechado nas duas rodadas de validação de 07/09/2026. Fluxo: aberta → em_analise →
+        orcamento_externo (opcional) → aguardando_aprovacao → aprovada → concluida. cancelada é
+        alcançável a partir de qualquer estado anterior a aprovada. nao_aprovado só a partir de
+        aguardando_aprovacao — orçamento sem retorno do cliente, mudança manual do técnico;
+        distinto de cancelada (que é uma decisão explícita do cliente ou da empresa). garantia é
+        uma reabertura especial, só a partir de concluida (retrabalho dentro do prazo de
+        garantia, mesma OS) — depois volta a concluida. Ver api-conventions.md para a tabela de
+        transições.
       enum:
         - aberta
         - em_analise
         - orcamento_externo
         - aguardando_aprovacao
         - aprovada
+        - nao_aprovado
         - garantia
         - concluida
         - cancelada

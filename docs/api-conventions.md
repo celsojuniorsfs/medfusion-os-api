@@ -60,10 +60,10 @@ issue api #23, F2):
    aplicação captura a exceção de integridade e responde `409` (ver acima) em vez de vazar um erro
    500 de SQL.
 
-## Status da OS — transições **[PROPOSTO, validação de 07/09/2026]**
+## Status da OS — transições
 
-Fluxo ampliado a partir da resposta do cliente à validação de escopo; ainda não confirmado
-palavra por palavra (ver `escopo-v1.md` § Status da OS e `CONTEXT.md` § Validação com o cliente).
+Fluxo fechado nas duas rodadas de validação de escopo com o cliente (ver `escopo-v1.md` §
+Status da OS e `CONTEXT.md` § Validação com o cliente).
 
 | De | Para | Quando |
 |---|---|---|
@@ -72,14 +72,22 @@ palavra por palavra (ver `escopo-v1.md` § Status da OS e `CONTEXT.md` § Valida
 | `orcamento_externo` | `em_analise` ou `aguardando_aprovacao` | retorno do terceiro |
 | `em_analise` | `aguardando_aprovacao` | orçamento pronto, enviado ao cliente |
 | `aguardando_aprovacao` | `aprovada` | cliente aceitou |
+| `aguardando_aprovacao` | `nao_aprovado` | orçamento ficou sem retorno do cliente por tempo suficiente — mudança manual do técnico, sem prazo automático |
 | `aprovada` | `concluida` | serviço executado |
-| `aberta` / `em_analise` / `orcamento_externo` / `aguardando_aprovacao` | `cancelada` | a qualquer momento antes da aprovação |
+| `aberta` / `em_analise` / `orcamento_externo` / `aguardando_aprovacao` | `cancelada` | a qualquer momento antes da aprovação, por decisão explícita (cliente não quer mais, ou a empresa decide encerrar) |
 | `concluida` | `garantia` | retrabalho dentro do prazo de garantia — **mesma OS**, não cria uma nova |
 | `garantia` | `concluida` | retrabalho finalizado |
 
-`concluida` (fora do prazo de garantia) e `cancelada` são os únicos estados sem saída. A
-reabertura por `garantia` existe justamente para a empresa medir quantos retrabalhos aconteceram
-num período, sem perder o vínculo com a OS original.
+`concluida` (fora do prazo de garantia), `cancelada` e `nao_aprovado` são os únicos estados sem
+saída. A reabertura por `garantia` existe justamente para a empresa medir quantos retrabalhos
+aconteceram num período, sem perder o vínculo com a OS original.
+
+`nao_aprovado` existe separado de `cancelada` porque, na prática, são causas diferentes: um
+orçamento pode ficar meses sem resposta do cliente (o caso de `nao_aprovado`, que a empresa quer
+medir à parte — "quantos orçamentos não aprovados eu tive") sem que ninguém tenha de fato decidido
+cancelar o serviço. Nenhum dos dois é reaberto — a necessidade real, confirmada pelo cliente, é
+só poder **consultar** os dados da OS depois (`GET /orders/{id}` não depende do status), para o
+caso de o cliente retomar contato meses depois perguntando sobre aquele orçamento.
 
 ## Peças, mão de obra e o cálculo do total
 

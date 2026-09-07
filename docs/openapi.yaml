@@ -7,7 +7,12 @@ info:
     versionamento /api/v1). Escopo e critérios de aceite em
     https://github.com/celsojuniorsfs/medfusion-os-web/blob/main/docs/escopo-v1.md.
     Convenções (autenticação, formato de erro) detalhadas em ./api-conventions.md.
-  version: "1.0.0"
+
+    Atualizado em 07/09/2026 com as correções da validação de escopo com o cliente: equipamentos
+    sem limite por OS (catálogo reaproveitável por cliente), valor de peça opcional +
+    valor_mao_obra, e o status ampliado (OrderStatus) — este último marcado como PROPOSTO,
+    aguardando confirmação final do cliente.
+  version: "1.1.0"
   license:
     name: Proprietary
     identifier: proprietary
@@ -22,6 +27,8 @@ tags:
     description: Autenticação de técnicos via Laravel Sanctum
   - name: clients
     description: Cadastro de clientes
+  - name: equipments
+    description: Catálogo de equipamentos por cliente, reaproveitável entre OS's
   - name: orders
     description: Ordens de Serviço / Orçamento Técnico
 
@@ -192,6 +199,96 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /clients/{id}/equipments:
+    parameters:
+      - $ref: "#/components/parameters/ClientId"
+    get:
+      tags: [equipments]
+      summary: Lista os equipamentos cadastrados para o cliente
+      operationId: listClientEquipments
+      responses:
+        "200":
+          description: Lista de equipamentos do cliente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Equipment" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [equipments]
+      summary: Cadastra um equipamento novo para o cliente
+      description: >
+        Também é chamado implicitamente por POST /orders quando uma OS traz um equipamento
+        digitado pela primeira vez — o equipamento fica salvo no catálogo do cliente para as
+        próximas OS's.
+      operationId: createClientEquipment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EquipmentInput" }
+      responses:
+        "201":
+          description: Equipamento cadastrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Equipment" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /clients/{id}/equipments/{equipmentId}:
+    parameters:
+      - $ref: "#/components/parameters/ClientId"
+      - $ref: "#/components/parameters/EquipmentId"
+    put:
+      tags: [equipments]
+      summary: Atualiza um equipamento do catálogo do cliente
+      operationId: updateClientEquipment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EquipmentInput" }
+      responses:
+        "200":
+          description: Equipamento atualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Equipment" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [equipments]
+      summary: Remove um equipamento do catálogo do cliente
+      operationId: deleteClientEquipment
+      responses:
+        "204": { description: Removido }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /orders:
     get:
       tags: [orders]
@@ -230,6 +327,11 @@ paths:
     post:
       tags: [orders]
       summary: Cria uma OS com equipamentos e peças aninhados
+      description: >
+        Ao criar a OS com sucesso, o PDF é gerado e uma cópia é enviada automaticamente ao
+        cliente por e-mail e por WhatsApp (novo na validação de 07/09/2026) — sem ação adicional
+        do técnico. Equipamentos informados sem equipment_id são cadastrados no catálogo do
+        cliente nesta mesma chamada (ver OrderEquipmentInput).
       operationId: createOrder
       requestBody:
         required: true
@@ -330,8 +432,11 @@ paths:
       summary: Transiciona o status da OS
       operationId: updateOrderStatus
       description: >
-        Transições permitidas: aberta→aprovada, aberta→cancelada, aprovada→concluida,
-        aprovada→cancelada. concluida e cancelada são estados finais.
+        [PROPOSTO — ver OrderStatus] Transições: aberta→em_analise→orcamento_externo (opcional)
+        →aguardando_aprovacao→aprovada→concluida. cancelada é alcançável a partir de qualquer
+        estado anterior a aprovada. garantia só a partir de concluida (retrabalho dentro do
+        prazo, mesma OS), e de garantia de volta para concluida. Tabela completa em
+        api-conventions.md.
       requestBody:
         required: true
         content:
@@ -410,6 +515,11 @@ components:
       schema: { type: integer }
     OrderId:
       name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    EquipmentId:
+      name: equipmentId
       in: path
       required: true
       schema: { type: integer }
@@ -514,13 +624,45 @@ components:
 
     OrderStatus:
       type: string
-      enum: [aberta, aprovada, concluida, cancelada]
+      description: >
+        [PROPOSTO — aguardando confirmação final do cliente, validação de 07/09/2026] Fluxo:
+        aberta → em_analise → orcamento_externo (opcional) → aguardando_aprovacao → aprovada
+        → concluida. cancelada é alcançável a partir de qualquer estado anterior a aprovada.
+        garantia é uma reabertura especial, só a partir de concluida (retrabalho dentro do
+        prazo de garantia, mesma OS) — depois volta a concluida. Ver api-conventions.md para a
+        tabela de transições.
+      enum:
+        - aberta
+        - em_analise
+        - orcamento_externo
+        - aguardando_aprovacao
+        - aprovada
+        - garantia
+        - concluida
+        - cancelada
 
-    OrderEquipment:
+    Equipment:
       type: object
-      required: [ordem, equipamento]
+      description: >
+        Catálogo de equipamentos por cliente — cadastrado uma vez, reaproveitado entre OS's.
+        Corrige a v1 original, que tratava equipamento como texto livre por OS sem limite de
+        quantidade definido (a planilha só tinha espaço para 2; casos reais chegam a centenas).
       properties:
-        ordem: { type: integer, enum: [1, 2] }
+        id: { type: integer }
+        client_id: { type: integer }
+        equipamento: { type: string }
+        marca: { type: ["string", "null"] }
+        modelo: { type: ["string", "null"] }
+        numero_serie: { type: ["string", "null"] }
+        patrimonio: { type: ["string", "null"] }
+        acessorios: { type: ["string", "null"] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    EquipmentInput:
+      type: object
+      required: [equipamento]
+      properties:
         equipamento: { type: string }
         marca: { type: ["string", "null"] }
         modelo: { type: ["string", "null"] }
@@ -528,13 +670,28 @@ components:
         patrimonio: { type: ["string", "null"] }
         acessorios: { type: ["string", "null"] }
 
+    OrderEquipmentInput:
+      description: >
+        Referencia um equipamento já cadastrado no cliente, OU cadastra um equipamento novo
+        (que fica salvo no catálogo do cliente a partir desta OS).
+      oneOf:
+        - type: object
+          required: [equipment_id]
+          properties:
+            equipment_id: { type: integer }
+        - $ref: "#/components/schemas/EquipmentInput"
+
     OrderItem:
       type: object
-      required: [quantidade, descricao, valor_unitario]
+      description: >
+        valor_unitario é opcional — corrigido na validação de 07/09/2026. Orçamentos de
+        prefeitura costumam trazer só o valor da mão de obra (orders.valor_mao_obra), com o
+        valor das peças embutido, para não ultrapassar o teto que dispara licitação.
+      required: [quantidade, descricao]
       properties:
         quantidade: { type: number }
         descricao: { type: string }
-        valor_unitario: { type: number, format: float }
+        valor_unitario: { type: ["number", "null"], format: float }
 
     OrderPdf:
       type: object
@@ -563,11 +720,12 @@ components:
         forma_pagamento: { type: ["string", "null"] }
         garantia_prazo: { type: ["string", "null"] }
         validade_proposta: { type: ["string", "null"] }
+        valor_mao_obra: { type: ["number", "null"], format: float }
         total: { type: number, format: float }
         certificado_numero: { type: ["string", "null"] }
         equipments:
           type: array
-          items: { $ref: "#/components/schemas/OrderEquipment" }
+          items: { $ref: "#/components/schemas/Equipment" }
         items:
           type: array
           items: { $ref: "#/components/schemas/OrderItem" }
@@ -576,6 +734,10 @@ components:
 
     OrderInput:
       type: object
+      description: >
+        total não é enviado pelo cliente — é sempre calculado no backend a partir de items e
+        valor_mao_obra. Pelo menos um valor precisa estar presente entre os itens com
+        valor_unitario preenchido e valor_mao_obra (ver critérios de aceite em escopo-v1.md).
       required: [numero, data, client_id, equipments, items]
       properties:
         numero: { type: integer }
@@ -592,11 +754,12 @@ components:
         forma_pagamento: { type: ["string", "null"] }
         garantia_prazo: { type: ["string", "null"] }
         validade_proposta: { type: ["string", "null"] }
+        valor_mao_obra: { type: ["number", "null"], format: float }
         equipments:
           type: array
           minItems: 1
-          maxItems: 2
-          items: { $ref: "#/components/schemas/OrderEquipment" }
+          description: Sem limite de quantidade — corrigido na validação de 07/09/2026.
+          items: { $ref: "#/components/schemas/OrderEquipmentInput" }
         items:
           type: array
           items: { $ref: "#/components/schemas/OrderItem" }

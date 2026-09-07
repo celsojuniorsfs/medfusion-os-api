@@ -68,10 +68,29 @@ conexão):
 | `FILESYSTEM_DISK` | driver do Object Storage (S3-compatível) |
 | `SESSION_DRIVER` | `database` (evita depender do filesystem efêmero) |
 | `CACHE_STORE` | `database` na v1 — sem Redis/KV Store contratado ainda; revisitar se latência de cache virar gargalo |
-| `QUEUE_CONNECTION` | `database` — não há jobs assíncronos na v1 (PDF é gerado de forma síncrona no request) |
+| `QUEUE_CONNECTION` | `database` — usada para enfileirar o envio de e-mail/WhatsApp da OS (ver abaixo); PDF continua gerado de forma síncrona no request |
 
 **Frontend (Vercel)** — não são variáveis do Laravel, mas fecham o par: `environment.ts` /
 `environment.prod.ts` do Angular trazem `apiUrl` apontando para a API de cada ambiente.
+
+### Notificação automática (novo — validação de 07/09/2026)
+
+Ao criar a OS, o backend envia automaticamente uma cópia do PDF ao cliente por e-mail e WhatsApp
+(ver `api-conventions.md`). Variáveis adicionais, **definidas no painel do environment** (mesma
+origem que as demais — nada disso é injetado automaticamente pela plataforma):
+
+| Variável | Descrição |
+|---|---|
+| `MAIL_MAILER` | `smtp` |
+| `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_ENCRYPTION` | credenciais do provedor de e-mail transacional escolhido |
+| `MAIL_FROM_ADDRESS`, `MAIL_FROM_NAME` | remetente exibido ao cliente |
+| `WHATSAPP_PHONE_NUMBER_ID` | id do número de telefone comercial no WhatsApp Cloud API |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | id da conta comercial (WABA) na Meta |
+| `WHATSAPP_ACCESS_TOKEN` | token de acesso do app configurado no Meta for Developers |
+
+**Dependência externa que não depende de código**: a Med Fusion precisa verificar uma conta
+comercial no WhatsApp Cloud API (Meta for Developers) antes desta funcionalidade poder ir ao ar
+— é um passo manual do lado do cliente, não algo resolvido só com configuração de ambiente.
 
 ### CORS
 

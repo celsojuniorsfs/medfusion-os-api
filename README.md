@@ -1,2 +1,31 @@
 # Med Fusion Manutenção e Venda Clínica Hospitalar Ltda.
-Backend (Laravel API)
+
+Backend (Laravel API) do sistema de Ordem de Serviço / Orçamento Técnico. Consumido pelo frontend
+Angular em [medfusion-os-web](https://github.com/celsojuniorsfs/medfusion-os-web).
+
+## Stack
+
+- **Framework**: Laravel + Sanctum (autenticação por token Bearer)
+- **PDF**: dompdf, gerado sob demanda e guardado no Laravel Cloud Object Storage
+- **Banco**: Laravel MySQL (Laravel Cloud)
+- **Deploy**: Laravel Cloud
+
+## Documentação
+
+- [`docs/openapi.yaml`](./docs/openapi.yaml) — contrato da API (OpenAPI 3.1), todos os endpoints
+  sob `/api/v1`
+- [`docs/api-conventions.md`](./docs/api-conventions.md) — versionamento, autenticação, formato
+  de erro e API Resources
+- [`docs/ambientes.md`](./docs/ambientes.md) — ambientes, variáveis de ambiente e configuração de
+  deploy no Laravel Cloud
+- [`.env.example`](./.env.example) — variáveis de ambiente para desenvolvimento local
+- Escopo da v1 e critérios de aceite:
+  [medfusion-os-web/docs/escopo-v1.md](https://github.com/celsojuniorsfs/medfusion-os-web/blob/main/docs/escopo-v1.md)
+- Glossário de domínio:
+  [medfusion-os-web/CONTEXT.md](https://github.com/celsojuniorsfs/medfusion-os-web/blob/main/CONTEXT.md)
+
+## Acompanhamento
+
+O backlog está organizado em issues e milestones por fase do ciclo de desenvolvimento
+(Planejamento → Análise → Projeto → Programação → Testes → Implantação), tanto neste
+repositório quanto no [medfusion-os-web](https://github.com/celsojuniorsfs/medfusion-os-web).

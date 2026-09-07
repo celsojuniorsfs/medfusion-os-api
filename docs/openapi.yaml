@@ -1,0 +1,775 @@
+openapi: 3.1.0
+info:
+  title: Med Fusion OS API
+  description: >
+    API da Ordem de Serviço / Orçamento Técnico da Med Fusion Manutenção e Venda
+    Clínica Hospitalar Ltda. Fecha a issue #21 (Definir contrato da API e
+    versionamento /api/v1). Escopo e critérios de aceite em
+    https://github.com/celsojuniorsfs/medfusion-os-web/blob/main/docs/escopo-v1.md.
+    Convenções (autenticação, formato de erro) detalhadas em ./api-conventions.md.
+
+    Atualizado em 07/09/2026 (duas rodadas de validação com o cliente): equipamentos sem limite
+    por OS (catálogo reaproveitável por cliente), valor de peça opcional + valor_mao_obra, status
+    ampliado (OrderStatus, com nao_aprovado distinto de cancelada) e notificação automática por
+    e-mail/WhatsApp na criação da OS.
+  version: "1.2.0"
+  license:
+    name: Proprietary
+    identifier: proprietary
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local
+  - url: https://medfusion-os-api.laravel.cloud/api/v1
+    description: Produção (Laravel Cloud) — domínio final definido na F6, ver ambientes.md
+
+tags:
+  - name: auth
+    description: Autenticação de técnicos via Laravel Sanctum
+  - name: clients
+    description: Cadastro de clientes
+  - name: equipments
+    description: Catálogo de equipamentos por cliente, reaproveitável entre OS's
+  - name: orders
+    description: Ordens de Serviço / Orçamento Técnico
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Autentica um técnico e emite um token de acesso
+      operationId: loginUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Login bem-sucedido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string, description: "Sanctum personal access token" }
+                  user: { $ref: "#/components/schemas/User" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoga o token de acesso corrente
+      operationId: logoutUser
+      responses:
+        "204": { description: Sessão encerrada }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Retorna o usuário autenticado
+      operationId: getCurrentUser
+      responses:
+        "200":
+          description: Usuário autenticado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/User" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /clients:
+    get:
+      tags: [clients]
+      summary: Lista clientes com busca e paginação
+      operationId: listClients
+      parameters:
+        - name: search
+          in: query
+          description: Busca por razão social ou CNPJ
+          schema: { type: string }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200":
+          description: Página de clientes
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Pagination"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Client" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [clients]
+      summary: Cria um cliente
+      operationId: createClient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientInput" }
+      responses:
+        "201":
+          description: Cliente criado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Client" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /clients/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ClientId"
+    get:
+      tags: [clients]
+      summary: Exibe um cliente
+      operationId: getClient
+      responses:
+        "200":
+          description: Cliente encontrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Client" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [clients]
+      summary: Atualiza um cliente
+      operationId: updateClient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ClientInput" }
+      responses:
+        "200":
+          description: Cliente atualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Client" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [clients]
+      summary: Remove um cliente
+      operationId: deleteClient
+      responses:
+        "204": { description: Removido }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /clients/{id}/equipments:
+    parameters:
+      - $ref: "#/components/parameters/ClientId"
+    get:
+      tags: [equipments]
+      summary: Lista os equipamentos cadastrados para o cliente
+      operationId: listClientEquipments
+      responses:
+        "200":
+          description: Lista de equipamentos do cliente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Equipment" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [equipments]
+      summary: Cadastra um equipamento novo para o cliente
+      description: >
+        Também é chamado implicitamente por POST /orders quando uma OS traz um equipamento
+        digitado pela primeira vez — o equipamento fica salvo no catálogo do cliente para as
+        próximas OS's.
+      operationId: createClientEquipment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EquipmentInput" }
+      responses:
+        "201":
+          description: Equipamento cadastrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Equipment" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /clients/{id}/equipments/{equipmentId}:
+    parameters:
+      - $ref: "#/components/parameters/ClientId"
+      - $ref: "#/components/parameters/EquipmentId"
+    put:
+      tags: [equipments]
+      summary: Atualiza um equipamento do catálogo do cliente
+      operationId: updateClientEquipment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EquipmentInput" }
+      responses:
+        "200":
+          description: Equipamento atualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Equipment" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [equipments]
+      summary: Remove um equipamento do catálogo do cliente
+      operationId: deleteClientEquipment
+      responses:
+        "204": { description: Removido }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /orders:
+    get:
+      tags: [orders]
+      summary: Lista OS com filtros, ordenadas por data decrescente
+      operationId: listOrders
+      parameters:
+        - name: client_id
+          in: query
+          schema: { type: integer }
+        - name: equipment_id
+          in: query
+          description: >
+            Filtra as OS's de um equipamento específico do catálogo. Usado pela tela de
+            histórico do equipamento (ver escopo-v1.md § Histórico do equipamento) — geralmente
+            combinado com client_id.
+          schema: { type: integer }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/OrderStatus" }
+        - name: date_from
+          in: query
+          schema: { type: string, format: date }
+        - name: date_to
+          in: query
+          schema: { type: string, format: date }
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PerPage"
+      responses:
+        "200":
+          description: Página de OS
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Pagination"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Order" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [orders]
+      summary: Cria uma OS com equipamentos e peças aninhados
+      description: >
+        Ao criar a OS com sucesso, o PDF é gerado e uma cópia é enviada automaticamente ao
+        cliente por e-mail e por WhatsApp (novo na validação de 07/09/2026) — sem ação adicional
+        do técnico. Equipamentos informados sem equipment_id são cadastrados no catálogo do
+        cliente nesta mesma chamada (ver OrderEquipmentInput).
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderInput" }
+      responses:
+        "201":
+          description: OS criada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Order" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          description: Número de OS já utilizado por outra ordem de serviço
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /orders/next-number:
+    get:
+      tags: [orders]
+      summary: Sugere o próximo número de OS (último número emitido + 1, seed 1336)
+      operationId: getNextOrderNumber
+      responses:
+        "200":
+          description: Próximo número sugerido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  numero: { type: integer, example: 1337 }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /orders/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      tags: [orders]
+      summary: Exibe uma OS
+      operationId: getOrder
+      responses:
+        "200":
+          description: OS encontrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Order" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [orders]
+      summary: Atualiza uma OS (substitui equipamentos e peças)
+      operationId: updateOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderInput" }
+      responses:
+        "200":
+          description: OS atualizada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Order" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          description: Número de OS já utilizado por outra ordem de serviço
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /orders/{id}/status:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    patch:
+      tags: [orders]
+      summary: Transiciona o status da OS
+      operationId: updateOrderStatus
+      description: >
+        Ver OrderStatus. Transições: aberta→em_analise→orcamento_externo (opcional)
+        →aguardando_aprovacao→aprovada→concluida. cancelada é alcançável a partir de qualquer
+        estado anterior a aprovada. nao_aprovado só a partir de aguardando_aprovacao. garantia só
+        a partir de concluida (retrabalho dentro do prazo, mesma OS), e de garantia de volta para
+        concluida. Tabela completa em api-conventions.md.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { $ref: "#/components/schemas/OrderStatus" }
+      responses:
+        "200":
+          description: Status atualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Order" }
+        "422":
+          description: Transição de status inválida
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationErrorBody" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /orders/{id}/pdf:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    post:
+      tags: [orders]
+      summary: Gera o PDF da OS e o envia ao Object Storage
+      operationId: generateOrderPdf
+      responses:
+        "200":
+          description: PDF gerado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderPdf" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      tags: [orders]
+      summary: Retorna a URL assinada do último PDF gerado
+      operationId: getOrderPdf
+      responses:
+        "200":
+          description: PDF disponível
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderPdf" }
+        "404":
+          description: OS não encontrada, ou PDF ainda não foi gerado para esta OS
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Sanctum personal access token, emitido por POST /auth/login
+
+  parameters:
+    ClientId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    OrderId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    EquipmentId:
+      name: equipmentId
+      in: path
+      required: true
+      schema: { type: integer }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PerPage:
+      name: per_page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 15 }
+
+  responses:
+    Unauthorized:
+      description: Token ausente, inválido ou expirado
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Recurso não encontrado
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: Erro de validação
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ValidationErrorBody" }
+
+  schemas:
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+
+    ValidationErrorBody:
+      type: object
+      required: [message, errors]
+      properties:
+        message: { type: string, example: "The given data was invalid." }
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+          example:
+            numero: ["O número informado já está em uso."]
+
+    Pagination:
+      type: object
+      properties:
+        links:
+          type: object
+          properties:
+            first: { type: string, format: uri }
+            last: { type: string, format: uri }
+            prev: { type: [string, "null"], format: uri }
+            next: { type: [string, "null"], format: uri }
+        meta:
+          type: object
+          properties:
+            current_page: { type: integer }
+            last_page: { type: integer }
+            per_page: { type: integer }
+            total: { type: integer }
+
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, format: email }
+
+    Client:
+      type: object
+      properties:
+        id: { type: integer }
+        razao_social: { type: string }
+        cnpj: { type: string, example: "31.233.218/0001-10" }
+        solicitante: { type: ["string", "null"] }
+        setor: { type: ["string", "null"] }
+        telefone: { type: ["string", "null"] }
+        endereco: { type: ["string", "null"] }
+        cidade: { type: ["string", "null"] }
+        cep: { type: ["string", "null"] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ClientInput:
+      type: object
+      required: [razao_social, cnpj]
+      properties:
+        razao_social: { type: string }
+        cnpj: { type: string }
+        solicitante: { type: ["string", "null"] }
+        setor: { type: ["string", "null"] }
+        telefone: { type: ["string", "null"] }
+        endereco: { type: ["string", "null"] }
+        cidade: { type: ["string", "null"] }
+        cep: { type: ["string", "null"] }
+
+    OrderStatus:
+      type: string
+      description: >
+        Fechado nas duas rodadas de validação de 07/09/2026. Fluxo: aberta → em_analise →
+        orcamento_externo (opcional) → aguardando_aprovacao → aprovada → concluida. cancelada é
+        alcançável a partir de qualquer estado anterior a aprovada. nao_aprovado só a partir de
+        aguardando_aprovacao — orçamento sem retorno do cliente, mudança manual do técnico;
+        distinto de cancelada (que é uma decisão explícita do cliente ou da empresa). garantia é
+        uma reabertura especial, só a partir de concluida (retrabalho dentro do prazo de
+        garantia, mesma OS) — depois volta a concluida. Ver api-conventions.md para a tabela de
+        transições.
+      enum:
+        - aberta
+        - em_analise
+        - orcamento_externo
+        - aguardando_aprovacao
+        - aprovada
+        - nao_aprovado
+        - garantia
+        - concluida
+        - cancelada
+
+    Equipment:
+      type: object
+      description: >
+        Catálogo de equipamentos por cliente — cadastrado uma vez, reaproveitado entre OS's.
+        Corrige a v1 original, que tratava equipamento como texto livre por OS sem limite de
+        quantidade definido (a planilha só tinha espaço para 2; casos reais chegam a centenas).
+      properties:
+        id: { type: integer }
+        client_id: { type: integer }
+        equipamento: { type: string }
+        marca: { type: ["string", "null"] }
+        modelo: { type: ["string", "null"] }
+        numero_serie: { type: ["string", "null"] }
+        patrimonio: { type: ["string", "null"] }
+        acessorios: { type: ["string", "null"] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    EquipmentInput:
+      type: object
+      required: [equipamento]
+      properties:
+        equipamento: { type: string }
+        marca: { type: ["string", "null"] }
+        modelo: { type: ["string", "null"] }
+        numero_serie: { type: ["string", "null"] }
+        patrimonio: { type: ["string", "null"] }
+        acessorios: { type: ["string", "null"] }
+
+    OrderEquipmentInput:
+      description: >
+        Referencia um equipamento já cadastrado no cliente, OU cadastra um equipamento novo
+        (que fica salvo no catálogo do cliente a partir desta OS).
+      oneOf:
+        - type: object
+          required: [equipment_id]
+          properties:
+            equipment_id: { type: integer }
+        - $ref: "#/components/schemas/EquipmentInput"
+
+    OrderItem:
+      type: object
+      description: >
+        valor_unitario é opcional — corrigido na validação de 07/09/2026. Orçamentos de
+        prefeitura costumam trazer só o valor da mão de obra (orders.valor_mao_obra), com o
+        valor das peças embutido, para não ultrapassar o teto que dispara licitação.
+      required: [quantidade, descricao]
+      properties:
+        quantidade: { type: number }
+        descricao: { type: string }
+        valor_unitario: { type: ["number", "null"], format: float }
+
+    OrderPdf:
+      type: object
+      properties:
+        url: { type: string, format: uri, description: "URL assinada do Object Storage" }
+        generated_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+
+    Order:
+      type: object
+      properties:
+        id: { type: integer }
+        numero: { type: integer, example: 1336 }
+        data: { type: string, format: date }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        client: { $ref: "#/components/schemas/Client" }
+        user: { $ref: "#/components/schemas/User" }
+        retirado: { type: boolean }
+        garantia: { type: boolean }
+        treinamento_tecnico: { type: boolean }
+        orc_local: { type: boolean }
+        locacao: { type: boolean }
+        defeito_apresentado: { type: ["string", "null"] }
+        manutencao_a_aplicar: { type: ["string", "null"] }
+        observacao: { type: ["string", "null"] }
+        forma_pagamento: { type: ["string", "null"] }
+        garantia_prazo: { type: ["string", "null"] }
+        validade_proposta: { type: ["string", "null"] }
+        valor_mao_obra: { type: ["number", "null"], format: float }
+        total: { type: number, format: float }
+        certificado_numero: { type: ["string", "null"] }
+        equipments:
+          type: array
+          items: { $ref: "#/components/schemas/Equipment" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/OrderItem" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    OrderInput:
+      type: object
+      description: >
+        total não é enviado pelo cliente — é sempre calculado no backend a partir de items e
+        valor_mao_obra. Pelo menos um valor precisa estar presente entre os itens com
+        valor_unitario preenchido e valor_mao_obra (ver critérios de aceite em escopo-v1.md).
+      required: [numero, data, client_id, equipments, items]
+      properties:
+        numero: { type: integer }
+        data: { type: string, format: date }
+        client_id: { type: integer }
+        retirado: { type: boolean, default: false }
+        garantia: { type: boolean, default: false }
+        treinamento_tecnico: { type: boolean, default: false }
+        orc_local: { type: boolean, default: false }
+        locacao: { type: boolean, default: false }
+        defeito_apresentado: { type: ["string", "null"] }
+        manutencao_a_aplicar: { type: ["string", "null"] }
+        observacao: { type: ["string", "null"] }
+        forma_pagamento: { type: ["string", "null"] }
+        garantia_prazo: { type: ["string", "null"] }
+        validade_proposta: { type: ["string", "null"] }
+        valor_mao_obra: { type: ["number", "null"], format: float }
+        equipments:
+          type: array
+          minItems: 1
+          description: Sem limite de quantidade — corrigido na validação de 07/09/2026.
+          items: { $ref: "#/components/schemas/OrderEquipmentInput" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/OrderItem" }

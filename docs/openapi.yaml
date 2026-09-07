@@ -298,6 +298,13 @@ paths:
         - name: client_id
           in: query
           schema: { type: integer }
+        - name: equipment_id
+          in: query
+          description: >
+            Filtra as OS's de um equipamento específico do catálogo. Usado pela tela de
+            histórico do equipamento (ver escopo-v1.md § Histórico do equipamento) — geralmente
+            combinado com client_id.
+          schema: { type: integer }
         - name: status
           in: query
           schema: { $ref: "#/components/schemas/OrderStatus" }

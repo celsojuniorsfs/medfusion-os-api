@@ -179,3 +179,6 @@ cópia ao cliente por e-mail e por WhatsApp, sem ação do técnico.
 - Falha no envio (e-mail ou WhatsApp) não deve impedir a criação da OS — registrar o erro e
   permitir reenvio manual depois é preferível a bloquear o fluxo principal por causa de um canal
   de notificação fora do ar.
+- **Reenvio manual** (decidido na Fase 3): `POST /orders/{id}/notify` dispara os mesmos jobs de
+  notificação novamente — reenvia o PDF já existente (gera um se ainda não houver), não cria uma
+  cópia nova. Resposta `202` — processado de forma assíncrona pela fila `database`.

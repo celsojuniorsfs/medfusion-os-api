@@ -2,7 +2,6 @@
 
 namespace Modules\Identity\Presentation\Http\Controllers;
 
-use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -10,7 +9,7 @@ use Illuminate\Support\Facades\Hash;
 use Modules\Identity\Infrastructure\ReadModels\User;
 use Modules\Identity\Presentation\Http\Resources\UserResource;
 
-class AuthController extends Controller
+class AuthController
 {
     /**
      * POST /auth/login — sem middleware auth:sanctum (ver routes.php).

@@ -2,15 +2,15 @@
 
 namespace Tests\Feature\Modules;
 
-use App\Modules\Clients\Domain\ClientAggregate;
-use App\Modules\Identity\Domain\UserAggregate;
-use App\Modules\Orders\Domain\Enums\OrderStatus;
-use App\Modules\Orders\Domain\Exceptions\InvalidOrderStatusTransition;
-use App\Modules\Orders\Domain\OrderAggregate;
-use App\Modules\Orders\Infrastructure\ReadModels\Order;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Modules\Clients\Domain\ClientAggregate;
+use Modules\Identity\Domain\UserAggregate;
+use Modules\Orders\Domain\Enums\OrderStatus;
+use Modules\Orders\Domain\Exceptions\InvalidOrderStatusTransition;
+use Modules\Orders\Domain\OrderAggregate;
+use Modules\Orders\Infrastructure\ReadModels\Order;
 use Tests\TestCase;
 
 class OrdersAggregateTest extends TestCase

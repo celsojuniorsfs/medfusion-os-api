@@ -2,10 +2,10 @@
 
 namespace Tests\Feature\Modules;
 
-use App\Modules\Clients\Domain\ClientAggregate;
-use App\Modules\Equipments\Domain\EquipmentAggregate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Modules\Clients\Domain\ClientAggregate;
+use Modules\Equipments\Domain\EquipmentAggregate;
 use Tests\TestCase;
 
 class EquipmentsAggregateTest extends TestCase

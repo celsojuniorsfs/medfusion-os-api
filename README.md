@@ -6,7 +6,8 @@ Angular em [medfusion-os-web](https://github.com/celsojuniorsfs/medfusion-os-web
 ## Stack
 
 - **Framework**: Laravel + Sanctum (autenticação por token Bearer)
-- **Arquitetura**: monólito modular, DDD-like, Clean Architecture, com
+- **Arquitetura**: monólito modular ([`nwidart/laravel-modules`](https://laravelmodules.com/)),
+  DDD-like, Clean Architecture, com
   [`spatie/laravel-event-sourcing`](https://spatie.be/docs/laravel-event-sourcing/v7/) como
   mecanismo de integração entre módulos — ver [`docs/architecture.md`](./docs/architecture.md)
 - **PDF**: dompdf, gerado sob demanda e guardado no Laravel Cloud Object Storage
@@ -16,16 +17,20 @@ Angular em [medfusion-os-web](https://github.com/celsojuniorsfs/medfusion-os-web
 ## Estrutura
 
 ```
-app/Modules/{Identity,Clients,Equipments,Orders}/
-  Domain/          Agregado (AggregateRoot), Events/, Enums/, Exceptions/
-  Application/     Actions invocáveis (casos de uso)
-  Infrastructure/  Projectors/, Reactors/, ReadModels/ (Eloquent)
-  Presentation/     Http/Controllers, Http/Requests, Http/Resources, routes.php
+Modules/{Identity,Clients,Equipments,Orders}/     # módulos nwidart/laravel-modules
+  app/
+    Domain/          Agregado (AggregateRoot), Events/, Enums/, Exceptions/
+    Application/     Actions invocáveis (casos de uso)
+    Infrastructure/  Projectors/, Reactors/, ReadModels/ (Eloquent)
+    Presentation/    Http/Controllers, Http/Requests, Http/Resources
+    Providers/       <Módulo>ServiceProvider, RouteServiceProvider
+  routes/api.php      Só nos módulos com endpoint HTTP (hoje só Identity)
+  database/{migrations,seeders}/
 ```
 
-`routes/api.php` só agrega os `Presentation/routes.php` de cada módulo (para herdar o grupo de
-middleware `api` e o `apiPrefix` de `bootstrap/app.php`). Detalhes e a regra de fronteira entre
-módulos em [`docs/architecture.md`](./docs/architecture.md).
+Namespace raiz de cada módulo é `Modules\<Módulo>\`, não `App\Modules\`. Detalhes, a regra de
+fronteira entre módulos e por que Projectors são registrados explicitamente (sem auto-discovery)
+em [`docs/architecture.md`](./docs/architecture.md).
 
 ## Como rodar localmente
 

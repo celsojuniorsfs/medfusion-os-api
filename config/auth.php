@@ -1,6 +1,6 @@
 <?php
 
-use App\Modules\Identity\Infrastructure\ReadModels\User;
+use Modules\Identity\Infrastructure\ReadModels\User;
 
 return [
 

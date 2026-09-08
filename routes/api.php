@@ -1,9 +1,7 @@
 <?php
 
-// Agregador de rotas dos módulos — mantido aqui (em vez de nos Service Providers de cada
-// módulo) para herdar o grupo de middleware "api" e o apiPrefix ("api/v1") configurados em
-// bootstrap/app.php (withRouting). Cada módulo com endpoints HTTP tem seu próprio
-// Presentation/routes.php; módulos ainda sem endpoints (Clients, Equipments, Orders — CRUD é
-// fora desta sessão) ainda não aparecem aqui.
-
-require base_path('app/Modules/Identity/Presentation/routes.php');
+// Rotas de módulos NÃO ficam aqui — cada módulo com endpoints HTTP registra as suas via
+// Modules/<Nome>/routes/api.php + seu próprio RouteServiceProvider (nwidart/laravel-modules),
+// que já aplica o grupo de middleware "api" e fecha o prefixo "api/v1" usado no projeto todo.
+// Este arquivo só existe porque bootstrap/app.php referencia um `api:` para o health-check e
+// para qualquer rota futura que seja de fato global (não pertença a nenhum módulo).

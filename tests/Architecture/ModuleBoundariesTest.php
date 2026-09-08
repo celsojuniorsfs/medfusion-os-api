@@ -9,7 +9,7 @@ use Tests\TestCase;
  * Guarda de fronteira do monólito modular (ver docs/architecture.md): Domain e Application de
  * um módulo nunca importam Domain/Application/Infrastructure/Presentation de outro módulo — a
  * única forma de um módulo "ver" outro é por uuid (passado como parâmetro) ou pelo nome de uma
- * classe de evento (App\Modules\{Outro}\Domain\Events\...), nunca pela classe do agregado ou
+ * classe de evento (Modules\{Outro}\Domain\Events\...), nunca pela classe do agregado ou
  * pelo read model.
  *
  * Infrastructure/ReadModels e Presentation ficam de fora deste teste de propósito: são o lado
@@ -22,14 +22,14 @@ class ModuleBoundariesTest extends TestCase
 {
     public function test_domain_and_application_layers_do_not_cross_module_boundaries(): void
     {
-        $modulesPath = app_path('Modules');
+        $modulesPath = base_path('Modules');
         $violations = [];
 
         foreach (glob($modulesPath.'/*', GLOB_ONLYDIR) as $modulePath) {
             $module = basename($modulePath);
 
             foreach (['Domain', 'Application'] as $layer) {
-                $layerPath = $modulePath.DIRECTORY_SEPARATOR.$layer;
+                $layerPath = $modulePath.DIRECTORY_SEPARATOR.'app'.DIRECTORY_SEPARATOR.$layer;
 
                 if (! is_dir($layerPath)) {
                     continue;
@@ -40,18 +40,18 @@ class ModuleBoundariesTest extends TestCase
                 foreach ($finder as $file) {
                     $contents = $file->getContents();
 
-                    if (! preg_match_all('/^use\s+(App\\\\Modules\\\\[^;]+);/m', $contents, $matches)) {
+                    if (! preg_match_all('/^use\s+(Modules\\\\[^;]+);/m', $contents, $matches)) {
                         continue;
                     }
 
                     foreach ($matches[1] as $imported) {
-                        $importedModule = explode('\\', $imported)[2] ?? null;
+                        $importedModule = explode('\\', $imported)[1] ?? null;
 
                         if ($importedModule === null || $importedModule === $module) {
                             continue;
                         }
 
-                        if (str_starts_with($imported, "App\\Modules\\{$importedModule}\\Domain\\Events\\")) {
+                        if (str_starts_with($imported, "Modules\\{$importedModule}\\Domain\\Events\\")) {
                             continue;
                         }
 

@@ -2,9 +2,9 @@
 
 namespace Tests\Feature\Modules;
 
-use App\Modules\Clients\Domain\ClientAggregate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Modules\Clients\Domain\ClientAggregate;
 use Spatie\EventSourcing\StoredEvents\Models\EloquentStoredEvent;
 use Tests\TestCase;
 

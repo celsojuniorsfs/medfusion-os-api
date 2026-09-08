@@ -2,11 +2,11 @@
 
 namespace Tests\Feature\Modules;
 
-use App\Modules\Identity\Domain\UserAggregate;
-use App\Modules\Identity\Infrastructure\ReadModels\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Modules\Identity\Domain\UserAggregate;
+use Modules\Identity\Infrastructure\ReadModels\User;
 use Spatie\EventSourcing\StoredEvents\Models\EloquentStoredEvent;
 use Tests\TestCase;
 

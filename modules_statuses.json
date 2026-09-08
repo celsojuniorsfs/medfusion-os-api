@@ -1,0 +1,6 @@
+{
+    "Identity": true,
+    "Clients": true,
+    "Equipments": true,
+    "Orders": true
+}

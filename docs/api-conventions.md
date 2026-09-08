@@ -4,6 +4,16 @@
 > Insumo direto das issues [#28](https://github.com/celsojuniorsfs/medfusion-os-api/issues/28)
 > (API Resources e formato de erro) e [#29](https://github.com/celsojuniorsfs/medfusion-os-api/issues/29)
 > (estratégia Sanctum).
+>
+> **Atualizado em 08/09/2026**: nomes de campo padronizados em inglês (ex.: `razao_social` →
+> `company_name`, `numero` → `number`, status `aberta` → `open`). O significado de negócio não
+> muda — só o nome técnico do campo. Tabela completa de correspondência no fim deste documento.
+>
+> **Atualizado em 08/09/2026 (arquitetura)**: `id` passou de inteiro sequencial para UUID —
+> identidade dos agregados do Event Sourcing. Ver [`architecture.md`](./architecture.md) para a
+> arquitetura completa (monólito modular, DDD-like, `spatie/laravel-event-sourcing`). `number` da
+> OS **não muda**: é o número de negócio (seed 1336, editável pelo técnico), sem relação com a
+> identidade do agregado.
 
 ## Versionamento
 
@@ -54,7 +64,7 @@ Frontend (Vercel) e API (Laravel Cloud) vivem em domínios diferentes, então us
 Duas requisições simultâneas de criação não podem obter o mesmo número. Estratégia (detalhada na
 issue api #23, F2):
 
-1. Constraint `unique` em `orders.numero` no banco — a garantia real está aqui, não na aplicação.
+1. Constraint `unique` em `orders.number` no banco — a garantia real está aqui, não na aplicação.
 2. `GET /orders/next-number` é apenas uma **sugestão de UI**; o valor não é reservado.
 3. Ao salvar, a criação roda dentro de uma transação; se a constraint `unique` disparar, a
    aplicação captura a exceção de integridade e responde `409` (ver acima) em vez de vazar um erro
@@ -63,27 +73,29 @@ issue api #23, F2):
 ## Status da OS — transições
 
 Fluxo fechado nas duas rodadas de validação de escopo com o cliente (ver `escopo-v1.md` §
-Status da OS e `CONTEXT.md` § Validação com o cliente).
+Status da OS e `CONTEXT.md` § Validação com o cliente). Valores traduzidos para inglês em
+08/09/2026 — a correspondência com os termos usados na conversa com o cliente está entre
+parênteses.
 
 | De | Para | Quando |
 |---|---|---|
-| `aberta` | `em_analise` | diagnóstico começou |
-| `em_analise` | `orcamento_externo` | enviado a terceiro para avaliação (opcional) |
-| `orcamento_externo` | `em_analise` ou `aguardando_aprovacao` | retorno do terceiro |
-| `em_analise` | `aguardando_aprovacao` | orçamento pronto, enviado ao cliente |
-| `aguardando_aprovacao` | `aprovada` | cliente aceitou |
-| `aguardando_aprovacao` | `nao_aprovado` | orçamento ficou sem retorno do cliente por tempo suficiente — mudança manual do técnico, sem prazo automático |
-| `aprovada` | `concluida` | serviço executado |
-| `aberta` / `em_analise` / `orcamento_externo` / `aguardando_aprovacao` | `cancelada` | a qualquer momento antes da aprovação, por decisão explícita (cliente não quer mais, ou a empresa decide encerrar) |
-| `concluida` | `garantia` | retrabalho dentro do prazo de garantia — **mesma OS**, não cria uma nova |
-| `garantia` | `concluida` | retrabalho finalizado |
+| `open` (aberta) | `in_analysis` (em análise) | diagnóstico começou |
+| `in_analysis` | `external_quote` (orçamento externo) | enviado a terceiro para avaliação (opcional) |
+| `external_quote` | `in_analysis` ou `awaiting_approval` | retorno do terceiro |
+| `in_analysis` | `awaiting_approval` (aguardando aprovação) | orçamento pronto, enviado ao cliente |
+| `awaiting_approval` | `approved` (aprovada) | cliente aceitou |
+| `awaiting_approval` | `not_approved` (não aprovado) | orçamento ficou sem retorno do cliente por tempo suficiente — mudança manual do técnico, sem prazo automático |
+| `approved` | `completed` (concluída) | serviço executado |
+| `open` / `in_analysis` / `external_quote` / `awaiting_approval` | `canceled` (cancelada) | a qualquer momento antes da aprovação, por decisão explícita (cliente não quer mais, ou a empresa decide encerrar) |
+| `completed` | `warranty_repair` (garantia) | retrabalho dentro do prazo de garantia — **mesma OS**, não cria uma nova |
+| `warranty_repair` | `completed` | retrabalho finalizado |
 
-`concluida` (fora do prazo de garantia), `cancelada` e `nao_aprovado` são os únicos estados sem
-saída. A reabertura por `garantia` existe justamente para a empresa medir quantos retrabalhos
-aconteceram num período, sem perder o vínculo com a OS original.
+`completed` (fora do prazo de garantia), `canceled` e `not_approved` são os únicos estados sem
+saída. A reabertura por `warranty_repair` existe justamente para a empresa medir quantos
+retrabalhos aconteceram num período, sem perder o vínculo com a OS original.
 
-`nao_aprovado` existe separado de `cancelada` porque, na prática, são causas diferentes: um
-orçamento pode ficar meses sem resposta do cliente (o caso de `nao_aprovado`, que a empresa quer
+`not_approved` existe separado de `canceled` porque, na prática, são causas diferentes: um
+orçamento pode ficar meses sem resposta do cliente (o caso de `not_approved`, que a empresa quer
 medir à parte — "quantos orçamentos não aprovados eu tive") sem que ninguém tenha de fato decidido
 cancelar o serviço. Nenhum dos dois é reaberto — a necessidade real, confirmada pelo cliente, é
 só poder **consultar** os dados da OS depois (`GET /orders/{id}` não depende do status), para o
@@ -94,14 +106,14 @@ caso de o cliente retomar contato meses depois perguntando sobre aquele orçamen
 Corrige a decisão anterior ("valor da peça sempre obrigatório"). Casos reais levantados na
 validação:
 
-| Situação | Peças (`order_items.valor_unitario`) | Mão de obra (`orders.valor_mao_obra`) |
+| Situação | Peças (`order_items.unit_price`) | Mão de obra (`orders.labor_cost`) |
 |---|---|---|
 | Cliente particular (mais comum) | preenchido | preenchido |
 | Prefeitura (evita disparar licitação acima de um teto) | vazio — peça embutida | preenchido |
 | Caso raro, só peça | preenchido | vazio |
 
-`orders.total` é sempre calculado no backend: soma dos `order_items.valor_unitario` não nulos +
-`valor_mao_obra` (quando presente). A validação da OS recusa a gravação se **nenhum** valor
+`orders.total` é sempre calculado no backend: soma dos `order_items.unit_price` não nulos +
+`labor_cost` (quando presente). A validação da OS recusa a gravação se **nenhum** valor
 estiver presente (nem peça, nem mão de obra) — ver critério de aceite em `escopo-v1.md`.
 
 ## Equipamentos: catálogo por cliente
@@ -113,30 +125,43 @@ criar uma OS (`POST /orders`), cada item de `equipments` no payload é ou uma re
 equipamento já cadastrado (`equipment_id`) ou os dados de um equipamento novo, que o backend
 cadastra no catálogo do cliente na mesma transação (ver `OrderEquipmentInput` no OpenAPI).
 
-`numero_serie` repetido no mesmo cliente **não é bloqueado** (sem constraint `unique`) — o aviso
+`serial_number` repetido no mesmo cliente **não é bloqueado** (sem constraint `unique`) — o aviso
 ao técnico é responsabilidade do frontend, comparando contra a lista já carregada do cliente
 antes de enviar. Número de série às vezes é digitado errado ou fica em branco; bloquear geraria
 fricção maior do que o problema que resolve.
 
 ### Snapshot do equipamento na OS (decisão da Fase 2)
 
-`order_equipments` guarda uma **cópia** dos dados do equipamento (`equipamento`, `marca`,
-`modelo`, `numero_serie`, `patrimonio`, `acessorios`) no momento em que a OS é criada, além do
-vínculo `equipment_id`. Editar o cadastro do equipamento no catálogo depois **não** reescreve
-OS's antigas — o histórico fica fiel ao que foi atendido na época, mesmo que o cadastro seja
-corrigido depois. `equipment_id` continua existindo para navegação até o catálogo e para o
-filtro `GET /orders?equipment_id=X` da tela de histórico (ver `OrderEquipmentSnapshot` no
-OpenAPI). Mesmo padrão de "snapshot de linha de pedido" usado em qualquer sistema de vendas —
-o preço do produto na nota não muda se o catálogo mudar depois.
+`order_equipments` guarda uma **cópia** dos dados do equipamento (`name`, `brand`, `model`,
+`serial_number`, `asset_tag`, `accessories`) no momento em que a OS é criada, além do vínculo
+`equipment_id`. Editar o cadastro do equipamento no catálogo depois **não** reescreve OS's
+antigas — o histórico fica fiel ao que foi atendido na época, mesmo que o cadastro seja corrigido
+depois. `equipment_id` continua existindo para navegação até o catálogo e para o filtro
+`GET /orders?equipment_id=X` da tela de histórico (ver `OrderEquipmentSnapshot` no OpenAPI).
+Mesmo padrão de "snapshot de linha de pedido" usado em qualquer sistema de vendas — o preço do
+produto na nota não muda se o catálogo mudar depois.
 
 ## Notificação automática (e-mail + WhatsApp)
 
 Novo na validação: ao criar a OS com sucesso, o backend gera o PDF e dispara o envio de uma
 cópia ao cliente por e-mail e por WhatsApp, sem ação do técnico.
 
-**Confirmado na Fase 2**: o número de WhatsApp usado é `clients.telefone` — sem campo dedicado.
-Se um cliente específico não tiver WhatsApp nesse número, o envio falha silenciosamente e cai no
-fluxo de reenvio manual.
+- **E-mail**: `Illuminate\Mail`, enfileirado na fila `database` já prevista em `ambientes.md` —
+  evita que a criação da OS espere o envio para responder.
+- **WhatsApp**: recomendação é a **API oficial do WhatsApp Cloud (Meta)**, não um revendedor
+  não-oficial — gratuita até um volume razoável de mensagens e sem dependência de terceiro.
+  Exige verificação de conta comercial da Med Fusion na Meta, um passo manual que só o cliente
+  pode fazer (ver `ambientes.md` para as variáveis de ambiente correspondentes). Enfileirado do
+  mesmo jeito que o e-mail.
+- **Confirmado na Fase 2**: o número de WhatsApp usado é `clients.phone` — sem campo dedicado.
+  Se um cliente específico não tiver WhatsApp nesse número, o envio falha silenciosamente e cai
+  no fluxo de reenvio manual.
+- Falha no envio (e-mail ou WhatsApp) não deve impedir a criação da OS — registrar o erro e
+  permitir reenvio manual depois é preferível a bloquear o fluxo principal por causa de um canal
+  de notificação fora do ar.
+- **Reenvio manual** (decidido na Fase 3): `POST /orders/{id}/notify` dispara os mesmos jobs de
+  notificação novamente — reenvia o PDF já existente (gera um se ainda não houver), não cria uma
+  cópia nova. Resposta `202` — processado de forma assíncrona pela fila `database`.
 
 ### WhatsApp exige um modelo de mensagem aprovado pela Meta
 
@@ -164,21 +189,42 @@ Dois passos manuais, só o cliente pode fazer, e bloqueiam **apenas** esta funci
 (não o resto da v1): verificar a conta comercial da Med Fusion no Meta for Developers, e
 submeter o modelo acima para aprovação (issue api #65 segue aberta até isso acontecer).
 
-## Notificação automática (e-mail + WhatsApp)
+## Tabela de correspondência português → inglês
 
-Novo na validação: ao criar a OS com sucesso, o backend gera o PDF e dispara o envio de uma
-cópia ao cliente por e-mail e por WhatsApp, sem ação do técnico.
+Nomes de campo no banco/API (não confundir com os valores gravados neles, que continuam em
+português — ex.: `reported_defect` guarda o texto "Equipamento sem funções operacionais").
 
-- **E-mail**: `Illuminate\Mail`, enfileirado na fila `database` já prevista em `ambientes.md` —
-  evita que a criação da OS espere o envio para responder.
-- **WhatsApp**: recomendação é a **API oficial do WhatsApp Cloud (Meta)**, não um revendedor
-  não-oficial — gratuita até um volume razoável de mensagens e sem dependência de terceiro.
-  Exige verificação de conta comercial da Med Fusion na Meta, um passo manual que só o cliente
-  pode fazer (ver `ambientes.md` para as variáveis de ambiente correspondentes). Enfileirado do
-  mesmo jeito que o e-mail.
-- Falha no envio (e-mail ou WhatsApp) não deve impedir a criação da OS — registrar o erro e
-  permitir reenvio manual depois é preferível a bloquear o fluxo principal por causa de um canal
-  de notificação fora do ar.
-- **Reenvio manual** (decidido na Fase 3): `POST /orders/{id}/notify` dispara os mesmos jobs de
-  notificação novamente — reenvia o PDF já existente (gera um se ainda não houver), não cria uma
-  cópia nova. Resposta `202` — processado de forma assíncrona pela fila `database`.
+| Português (planilha/conversa) | Campo (inglês) | Tabela |
+|---|---|---|
+| Razão social | `company_name` | `clients` |
+| CNPJ | `tax_id` | `clients` |
+| Solicitante | `requester` | `clients` |
+| Setor | `department` | `clients` |
+| Telefone | `phone` | `clients` |
+| Endereço | `address` | `clients` |
+| Cidade | `city` | `clients` |
+| CEP | `postal_code` | `clients` |
+| Equipamento (nome/tipo) | `name` | `equipments`, `order_equipments` |
+| Marca | `brand` | `equipments`, `order_equipments` |
+| Modelo | `model` | `equipments`, `order_equipments` |
+| Número de série | `serial_number` | `equipments`, `order_equipments` |
+| Patrimônio | `asset_tag` | `equipments`, `order_equipments` |
+| Acessórios | `accessories` | `equipments`, `order_equipments` |
+| Número (da OS) | `number` | `orders` |
+| Data | `date` | `orders` |
+| Retirado | `picked_up` | `orders` |
+| Garantia (checkbox) | `warranty` | `orders` |
+| Treinamento técnico | `technical_training` | `orders` |
+| Orç. local | `on_site_quote` | `orders` |
+| Locação | `rental` | `orders` |
+| Defeito apresentado | `reported_defect` | `orders` |
+| Manutenção a aplicar | `maintenance_plan` | `orders` |
+| Observação | `notes` | `orders` |
+| Forma de pagamento | `payment_method` | `orders` |
+| Garantia (prazo) | `warranty_period` | `orders` |
+| Validade da proposta | `proposal_validity` | `orders` |
+| Valor da mão de obra | `labor_cost` | `orders` |
+| Nº do certificado | `certificate_number` | `orders` |
+| Quantidade | `quantity` | `order_items` |
+| Descrição | `description` | `order_items` |
+| Valor unitário | `unit_price` | `order_items` |

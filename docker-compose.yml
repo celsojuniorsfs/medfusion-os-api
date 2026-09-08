@@ -1,0 +1,21 @@
+services:
+  mysql:
+    image: mysql:8
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: medfusion_os
+      MYSQL_ROOT_PASSWORD: secret
+    ports:
+      # Lê DB_PORT do .env na mesma pasta (o Docker Compose faz isso automaticamente).
+      # Padrão 3306; se já tiver outro MySQL/serviço nessa porta, mude DB_PORT no seu .env.
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-psecret"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  mysql-data:

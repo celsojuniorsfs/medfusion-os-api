@@ -10,6 +10,28 @@ Angular em [medfusion-os-web](https://github.com/celsojuniorsfs/medfusion-os-web
 - **Banco**: Laravel MySQL (Laravel Cloud)
 - **Deploy**: Laravel Cloud
 
+## Como rodar localmente
+
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+# Preencher ADMIN_EMAIL / ADMIN_PASSWORD no .env antes do seed abaixo
+
+docker compose up -d          # MySQL 8 (porta 3306; se já tiver algo nessa porta, mude
+                               # DB_PORT no .env — o compose lê a mesma variável)
+php artisan migrate --seed
+php artisan serve             # http://localhost:8000
+```
+
+Testar o login:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" -H "Accept: application/json" \
+  -d '{"email":"<ADMIN_EMAIL do .env>","password":"<ADMIN_PASSWORD do .env>"}'
+```
+
 ## Documentação
 
 - [`docs/openapi.yaml`](./docs/openapi.yaml) — contrato da API (OpenAPI 3.1), todos os endpoints

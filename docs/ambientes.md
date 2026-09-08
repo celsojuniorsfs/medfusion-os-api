@@ -92,6 +92,12 @@ origem que as demais — nada disso é injetado automaticamente pela plataforma)
 comercial no WhatsApp Cloud API (Meta for Developers) antes desta funcionalidade poder ir ao ar
 — é um passo manual do lado do cliente, não algo resolvido só com configuração de ambiente.
 
+**Segunda dependência (Fase 2 — Análise)**: a Meta exige um **modelo de mensagem aprovado**
+(categoria Utilitário) para conversas iniciadas pela empresa — rascunho pronto para submissão em
+`api-conventions.md` § Notificação automática. **A partir de 01/10/2026, esse tipo de mensagem
+deixa de ser gratuito** mesmo dentro da janela de 24h — custo operacional recorrente a considerar
+na proposta comercial com o cliente, não só custo de desenvolvimento.
+
 ### CORS
 
 `config/cors.php`: liberar apenas `/api/*`, com:

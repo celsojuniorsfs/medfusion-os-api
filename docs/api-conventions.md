@@ -113,6 +113,57 @@ criar uma OS (`POST /orders`), cada item de `equipments` no payload é ou uma re
 equipamento já cadastrado (`equipment_id`) ou os dados de um equipamento novo, que o backend
 cadastra no catálogo do cliente na mesma transação (ver `OrderEquipmentInput` no OpenAPI).
 
+`numero_serie` repetido no mesmo cliente **não é bloqueado** (sem constraint `unique`) — o aviso
+ao técnico é responsabilidade do frontend, comparando contra a lista já carregada do cliente
+antes de enviar. Número de série às vezes é digitado errado ou fica em branco; bloquear geraria
+fricção maior do que o problema que resolve.
+
+### Snapshot do equipamento na OS (decisão da Fase 2)
+
+`order_equipments` guarda uma **cópia** dos dados do equipamento (`equipamento`, `marca`,
+`modelo`, `numero_serie`, `patrimonio`, `acessorios`) no momento em que a OS é criada, além do
+vínculo `equipment_id`. Editar o cadastro do equipamento no catálogo depois **não** reescreve
+OS's antigas — o histórico fica fiel ao que foi atendido na época, mesmo que o cadastro seja
+corrigido depois. `equipment_id` continua existindo para navegação até o catálogo e para o
+filtro `GET /orders?equipment_id=X` da tela de histórico (ver `OrderEquipmentSnapshot` no
+OpenAPI). Mesmo padrão de "snapshot de linha de pedido" usado em qualquer sistema de vendas —
+o preço do produto na nota não muda se o catálogo mudar depois.
+
+## Notificação automática (e-mail + WhatsApp)
+
+Novo na validação: ao criar a OS com sucesso, o backend gera o PDF e dispara o envio de uma
+cópia ao cliente por e-mail e por WhatsApp, sem ação do técnico.
+
+**Confirmado na Fase 2**: o número de WhatsApp usado é `clients.telefone` — sem campo dedicado.
+Se um cliente específico não tiver WhatsApp nesse número, o envio falha silenciosamente e cai no
+fluxo de reenvio manual.
+
+### WhatsApp exige um modelo de mensagem aprovado pela Meta
+
+Como a Med Fusion inicia a conversa (o cliente não mandou mensagem antes), a API não permite
+mensagem livre — é obrigatório um **modelo (template) pré-aprovado**, categoria **Utilitário**
+(transação/pós-venda). Rascunho para submissão no Meta Business Manager:
+
+```
+Nome: ordem_servico_criada
+Categoria: Utilitário (Utility)
+Idioma: pt_BR
+Cabeçalho: Documento (o PDF da OS, anexado dinamicamente — 100 MB de limite, bem acima do
+           tamanho real de uma OS)
+Corpo: "Olá {{1}}, segue a Ordem de Serviço nº {{2}} da Med Fusion, referente ao atendimento
+        em {{3}}. Qualquer dúvida, estamos à disposição."
+Rodapé: "Med Fusion Manutenção e Venda Clínica Hospitalar"
+```
+
+**Custo, a partir de 01/10/2026**: a Meta passa a cobrar por mensagens de template Utilitário
+mesmo dentro da janela de 24h de atendimento — não é mais gratuito nesse cenário. Isso é custo
+operacional recorrente da Med Fusion, não do desenvolvimento; vale registrar na proposta comercial
+se ainda não estiver.
+
+Dois passos manuais, só o cliente pode fazer, e bloqueiam **apenas** esta funcionalidade
+(não o resto da v1): verificar a conta comercial da Med Fusion no Meta for Developers, e
+submeter o modelo acima para aprovação (issue api #65 segue aberta até isso acontecer).
+
 ## Notificação automática (e-mail + WhatsApp)
 
 Novo na validação: ao criar a OS com sucesso, o backend gera o PDF e dispara o envio de uma

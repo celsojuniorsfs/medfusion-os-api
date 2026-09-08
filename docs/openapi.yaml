@@ -657,6 +657,9 @@ components:
         Catálogo de equipamentos por cliente — cadastrado uma vez, reaproveitado entre OS's.
         Corrige a v1 original, que tratava equipamento como texto livre por OS sem limite de
         quantidade definido (a planilha só tinha espaço para 2; casos reais chegam a centenas).
+        numero_serie repetido no mesmo cliente não é bloqueado pela API (sem constraint unique) —
+        o aviso ao técnico é responsabilidade do frontend, comparando contra a lista de
+        equipamentos já carregada do cliente antes de enviar o cadastro.
       properties:
         id: { type: integer }
         client_id: { type: integer }
@@ -690,6 +693,22 @@ components:
           properties:
             equipment_id: { type: integer }
         - $ref: "#/components/schemas/EquipmentInput"
+
+    OrderEquipmentSnapshot:
+      type: object
+      description: >
+        Decisão da Fase 2 (Análise): retrato do equipamento no momento em que esta OS foi criada
+        — NÃO reflete edições feitas depois no catálogo (`equipments`). `equipment_id` aponta
+        para o cadastro atual (usado para navegar até ele e para o filtro de histórico,
+        `GET /orders?equipment_id=X`), mas os demais campos são a cópia congelada.
+      properties:
+        equipment_id: { type: integer }
+        equipamento: { type: string }
+        marca: { type: ["string", "null"] }
+        modelo: { type: ["string", "null"] }
+        numero_serie: { type: ["string", "null"] }
+        patrimonio: { type: ["string", "null"] }
+        acessorios: { type: ["string", "null"] }
 
     OrderItem:
       type: object
@@ -735,7 +754,7 @@ components:
         certificado_numero: { type: ["string", "null"] }
         equipments:
           type: array
-          items: { $ref: "#/components/schemas/Equipment" }
+          items: { $ref: "#/components/schemas/OrderEquipmentSnapshot" }
         items:
           type: array
           items: { $ref: "#/components/schemas/OrderItem" }

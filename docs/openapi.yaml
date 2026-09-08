@@ -507,6 +507,26 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /orders/{id}/notify:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    post:
+      tags: [orders]
+      summary: Reenvia manualmente a notificação da OS (e-mail e WhatsApp)
+      description: >
+        Decidido na Fase 3 (Projeto) — completa o critério de aceite da issue api #65 ("existe
+        uma forma de reenviar manualmente"). Usado quando o envio automático da criação falha.
+        Reenvia o mesmo PDF já gerado (gera um se ainda não houver nenhum); não cria uma cópia
+        nova. Processado de forma assíncrona pela fila `database` — por isso `202`, não `200`.
+      operationId: resendOrderNotification
+      responses:
+        "202":
+          description: Reenvio agendado
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
 components:
   securitySchemes:
     bearerAuth:

@@ -9,11 +9,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('orders', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->unsignedInteger('number')->unique(); // número da OS
             $table->date('date');
-            $table->foreignId('client_id')->constrained()->restrictOnDelete();
-            $table->foreignId('user_id')->constrained()->restrictOnDelete();
+            $table->foreignUuid('client_id')->constrained()->restrictOnDelete();
+            $table->foreignUuid('user_id')->constrained()->restrictOnDelete();
 
             // Tipo de atendimento — checkboxes não excludentes.
             $table->boolean('picked_up')->default(false); // retirado

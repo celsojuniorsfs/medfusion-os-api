@@ -16,7 +16,12 @@ info:
     Atualizado em 08/09/2026: nomes de campo (schemas) padronizados em inglês — só os valores de
     negócio em português (nomes de cliente, defeitos descritos etc.) continuam em português,
     como dados, não como nomes de campo.
-  version: "1.3.0"
+
+    Atualizado em 08/09/2026 (arquitetura): identificadores (`id` e os parâmetros de rota
+    correspondentes) passaram de inteiro sequencial para UUID — identidade dos agregados do
+    Event Sourcing (ver architecture.md). `number` da OS não muda: continua o número de negócio
+    sequencial (seed 1336), editável pelo técnico, sem relação com a identidade do agregado.
+  version: "2.0.0"
   license:
     name: Proprietary
     identifier: proprietary
@@ -301,14 +306,14 @@ paths:
       parameters:
         - name: client_id
           in: query
-          schema: { type: integer }
+          schema: { type: string, format: uuid }
         - name: equipment_id
           in: query
           description: >
             Filtra as OS's de um equipamento específico do catálogo. Usado pela tela de
             histórico do equipamento (ver escopo-v1.md § Histórico do equipamento) — geralmente
             combinado com client_id.
-          schema: { type: integer }
+          schema: { type: string, format: uuid }
         - name: status
           in: query
           schema: { $ref: "#/components/schemas/OrderStatus" }
@@ -543,17 +548,17 @@ components:
       name: id
       in: path
       required: true
-      schema: { type: integer }
+      schema: { type: string, format: uuid }
     OrderId:
       name: id
       in: path
       required: true
-      schema: { type: integer }
+      schema: { type: string, format: uuid }
     EquipmentId:
       name: equipmentId
       in: path
       required: true
-      schema: { type: integer }
+      schema: { type: string, format: uuid }
     Page:
       name: page
       in: query
@@ -621,7 +626,7 @@ components:
     User:
       type: object
       properties:
-        id: { type: integer }
+        id: { type: string, format: uuid }
         name: { type: string }
         email: { type: string, format: email }
 
@@ -631,7 +636,7 @@ components:
         Nomes de campo em inglês (decidido em 08/09/2026); os valores em si continuam em
         português — são dados de negócio do cliente, não nomenclatura do sistema.
       properties:
-        id: { type: integer }
+        id: { type: string, format: uuid }
         company_name: { type: string, description: "Razão social" }
         tax_id: { type: string, description: "CNPJ", example: "31.233.218/0001-10" }
         requester: { type: ["string", "null"], description: "Solicitante" }
@@ -691,8 +696,8 @@ components:
         unique) — o aviso ao técnico é responsabilidade do frontend, comparando contra a lista
         de equipamentos já carregada do cliente antes de enviar o cadastro.
       properties:
-        id: { type: integer }
-        client_id: { type: integer }
+        id: { type: string, format: uuid }
+        client_id: { type: string, format: uuid }
         name: { type: string, description: "Nome/tipo do equipamento, ex.: Bisturi" }
         brand: { type: ["string", "null"], description: "Marca" }
         model: { type: ["string", "null"], description: "Modelo" }
@@ -721,7 +726,7 @@ components:
         - type: object
           required: [equipment_id]
           properties:
-            equipment_id: { type: integer }
+            equipment_id: { type: string, format: uuid }
         - $ref: "#/components/schemas/EquipmentInput"
 
     OrderEquipmentSnapshot:
@@ -732,7 +737,7 @@ components:
         para o cadastro atual (usado para navegar até ele e para o filtro de histórico,
         `GET /orders?equipment_id=X`), mas os demais campos são a cópia congelada.
       properties:
-        equipment_id: { type: integer }
+        equipment_id: { type: ["string", "null"], format: uuid }
         name: { type: string }
         brand: { type: ["string", "null"] }
         model: { type: ["string", "null"] }
@@ -766,7 +771,7 @@ components:
         e os campos de texto continuam guardando dados em português — o formulário e o
         vocabulário de negócio com o cliente não mudam, só o nome técnico do campo.
       properties:
-        id: { type: integer }
+        id: { type: string, format: uuid }
         number: { type: integer, example: 1336, description: "Número da OS" }
         date: { type: string, format: date }
         status: { $ref: "#/components/schemas/OrderStatus" }
@@ -805,7 +810,7 @@ components:
       properties:
         number: { type: integer }
         date: { type: string, format: date }
-        client_id: { type: integer }
+        client_id: { type: string, format: uuid }
         picked_up: { type: boolean, default: false }
         warranty: { type: boolean, default: false }
         technical_training: { type: boolean, default: false }

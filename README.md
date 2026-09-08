@@ -6,9 +6,26 @@ Angular em [medfusion-os-web](https://github.com/celsojuniorsfs/medfusion-os-web
 ## Stack
 
 - **Framework**: Laravel + Sanctum (autenticação por token Bearer)
+- **Arquitetura**: monólito modular, DDD-like, Clean Architecture, com
+  [`spatie/laravel-event-sourcing`](https://spatie.be/docs/laravel-event-sourcing/v7/) como
+  mecanismo de integração entre módulos — ver [`docs/architecture.md`](./docs/architecture.md)
 - **PDF**: dompdf, gerado sob demanda e guardado no Laravel Cloud Object Storage
 - **Banco**: Laravel MySQL (Laravel Cloud)
 - **Deploy**: Laravel Cloud
+
+## Estrutura
+
+```
+app/Modules/{Identity,Clients,Equipments,Orders}/
+  Domain/          Agregado (AggregateRoot), Events/, Enums/, Exceptions/
+  Application/     Actions invocáveis (casos de uso)
+  Infrastructure/  Projectors/, Reactors/, ReadModels/ (Eloquent)
+  Presentation/     Http/Controllers, Http/Requests, Http/Resources, routes.php
+```
+
+`routes/api.php` só agrega os `Presentation/routes.php` de cada módulo (para herdar o grupo de
+middleware `api` e o `apiPrefix` de `bootstrap/app.php`). Detalhes e a regra de fronteira entre
+módulos em [`docs/architecture.md`](./docs/architecture.md).
 
 ## Como rodar localmente
 
@@ -32,8 +49,17 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
   -d '{"email":"<ADMIN_EMAIL do .env>","password":"<ADMIN_PASSWORD do .env>"}'
 ```
 
+Depois de corrigir um bug de projeção (ou adicionar uma coluna a um read model), reconstrua os
+dados a partir dos eventos gravados:
+
+```bash
+php artisan event-sourcing:replay
+```
+
 ## Documentação
 
+- [`docs/architecture.md`](./docs/architecture.md) — monólito modular, DDD-like, Clean
+  Architecture, Event Sourcing
 - [`docs/openapi.yaml`](./docs/openapi.yaml) — contrato da API (OpenAPI 3.1), todos os endpoints
   sob `/api/v1`
 - [`docs/api-conventions.md`](./docs/api-conventions.md) — versionamento, autenticação, formato

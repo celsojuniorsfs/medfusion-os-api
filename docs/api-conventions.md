@@ -8,6 +8,12 @@
 > **Atualizado em 08/09/2026**: nomes de campo padronizados em inglês (ex.: `razao_social` →
 > `company_name`, `numero` → `number`, status `aberta` → `open`). O significado de negócio não
 > muda — só o nome técnico do campo. Tabela completa de correspondência no fim deste documento.
+>
+> **Atualizado em 08/09/2026 (arquitetura)**: `id` passou de inteiro sequencial para UUID —
+> identidade dos agregados do Event Sourcing. Ver [`architecture.md`](./architecture.md) para a
+> arquitetura completa (monólito modular, DDD-like, `spatie/laravel-event-sourcing`). `number` da
+> OS **não muda**: é o número de negócio (seed 1336, editável pelo técnico), sem relação com a
+> identidade do agregado.
 
 ## Versionamento
 

@@ -1,10 +1,10 @@
 <?php
 
-namespace App\Http\Controllers\Api;
+namespace App\Modules\Identity\Presentation\Http\Controllers;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\UserResource;
-use App\Models\User;
+use App\Modules\Identity\Infrastructure\ReadModels\User;
+use App\Modules\Identity\Presentation\Http\Resources\UserResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -13,8 +13,11 @@ use Illuminate\Support\Facades\Hash;
 class AuthController extends Controller
 {
     /**
-     * POST /auth/login — sem middleware auth:sanctum (ver routes/api.php).
+     * POST /auth/login — sem middleware auth:sanctum (ver routes.php).
      * Ability única "web" (decidido na F3 — sem papéis/permissões na v1).
+     *
+     * Login/logout não são comandos de domínio: consultam o read model e emitem/revogam um
+     * token Sanctum diretamente, sem passar pelo UserAggregate.
      */
     public function login(Request $request): JsonResponse
     {

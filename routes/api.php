@@ -1,15 +1,9 @@
 <?php
 
-use App\Http\Controllers\Api\AuthController;
-use Illuminate\Support\Facades\Route;
+// Agregador de rotas dos módulos — mantido aqui (em vez de nos Service Providers de cada
+// módulo) para herdar o grupo de middleware "api" e o apiPrefix ("api/v1") configurados em
+// bootstrap/app.php (withRouting). Cada módulo com endpoints HTTP tem seu próprio
+// Presentation/routes.php; módulos ainda sem endpoints (Clients, Equipments, Orders — CRUD é
+// fora desta sessão) ainda não aparecem aqui.
 
-// Prefixo /api/v1 configurado em bootstrap/app.php (apiPrefix).
-
-Route::post('/auth/login', [AuthController::class, 'login']);
-
-Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/auth/logout', [AuthController::class, 'logout']);
-    Route::get('/auth/me', [AuthController::class, 'me']);
-
-    // Rotas de clients, equipments e orders entram nas próximas issues da F4 (#37, #69, #45...).
-});
+require base_path('app/Modules/Identity/Presentation/routes.php');

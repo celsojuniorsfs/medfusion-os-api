@@ -1,15 +1,24 @@
 <?php
 
-namespace App\Models;
+namespace App\Modules\Orders\Infrastructure\ReadModels;
 
+use App\Modules\Clients\Infrastructure\ReadModels\Client;
+use App\Modules\Identity\Infrastructure\ReadModels\User;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * Read model do módulo Orders — construído pelo OrderProjector a partir dos eventos do
+ * OrderAggregate. id é o mesmo uuid do agregado; number continua sendo o número de negócio
+ * (seed 1336, editável), sem relação com a identidade do agregado.
+ */
+// "id" entra no fillable porque o OrderProjector cria a linha com o mesmo uuid do agregado.
 #[Fillable([
-    'number', 'date', 'client_id', 'user_id',
+    'id', 'number', 'date', 'client_id', 'user_id',
     'picked_up', 'warranty', 'technical_training', 'on_site_quote', 'rental',
     'reported_defect', 'maintenance_plan', 'notes',
     'payment_method', 'warranty_period', 'proposal_validity',
@@ -17,7 +26,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 ])]
 class Order extends Model
 {
-    use HasFactory;
+    use HasFactory, HasUuids;
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
 
     protected function casts(): array
     {

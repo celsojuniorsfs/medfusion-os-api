@@ -13,9 +13,9 @@ return new class extends Migration
         // equipment_id fica nullable (set null) para não travar a remoção de um equipamento do
         // catálogo; o snapshot abaixo continua descrevendo o que foi atendido.
         Schema::create('order_equipments', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('order_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('equipment_id')->nullable()->constrained('equipments')->nullOnDelete();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('order_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('equipment_id')->nullable()->constrained('equipments')->nullOnDelete();
 
             $table->string('name'); // equipamento
             $table->string('brand')->nullable(); // marca

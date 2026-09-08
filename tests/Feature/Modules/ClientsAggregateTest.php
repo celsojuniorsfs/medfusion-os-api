@@ -1,0 +1,43 @@
+<?php
+
+namespace Tests\Feature\Modules;
+
+use App\Modules\Clients\Domain\ClientAggregate;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
+use Spatie\EventSourcing\StoredEvents\Models\EloquentStoredEvent;
+use Tests\TestCase;
+
+class ClientsAggregateTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_registering_a_client_persists_the_event_and_projects_the_read_model(): void
+    {
+        $uuid = (string) Str::uuid();
+
+        ClientAggregate::retrieve($uuid)
+            ->register('Hospital São Lucas', '31.233.218/0001-10', 'Marcos', 'Manutenção', null, null, null, null)
+            ->persist();
+
+        $this->assertDatabaseHas('clients', [
+            'id' => $uuid,
+            'company_name' => 'Hospital São Lucas',
+            'tax_id' => '31.233.218/0001-10',
+        ]);
+        $this->assertSame(1, EloquentStoredEvent::query()->where('aggregate_uuid', $uuid)->count());
+    }
+
+    public function test_removing_a_client_deletes_the_read_model_row(): void
+    {
+        $uuid = (string) Str::uuid();
+
+        ClientAggregate::retrieve($uuid)
+            ->register('Hospital São Lucas', '31.233.218/0001-10', null, null, null, null, null, null)
+            ->persist();
+
+        ClientAggregate::retrieve($uuid)->remove()->persist();
+
+        $this->assertDatabaseMissing('clients', ['id' => $uuid]);
+    }
+}

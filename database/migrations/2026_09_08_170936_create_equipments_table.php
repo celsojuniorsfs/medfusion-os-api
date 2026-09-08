@@ -11,8 +11,8 @@ return new class extends Migration
         // Catálogo de equipamentos por cliente — decidido na validação de escopo: reaproveitado
         // entre OS's, sem limite de quantidade (ver escopo-v1.md § Modelo de dados da v1).
         Schema::create('equipments', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('client_id')->constrained()->cascadeOnDelete();
+            $table->uuid('id')->primary();
+            $table->foreignUuid('client_id')->constrained()->cascadeOnDelete();
             $table->string('name'); // equipamento (ex.: "Bisturi")
             $table->string('brand')->nullable(); // marca
             $table->string('model')->nullable(); // modelo

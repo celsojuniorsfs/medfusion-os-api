@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Med Fusion OS API
   description: >
-    API da Ordem de Serviço / Orçamento Técnico da Med Fusion Manutenção e Venda
+    API da Ordem de Serviço da Med Fusion Manutenção e Venda
     Clínica Hospitalar Ltda. Fecha a issue #21 (Definir contrato da API e
     versionamento /api/v1). Escopo e critérios de aceite em
     https://github.com/celsojuniorsfs/medfusion-os-web/blob/main/docs/escopo-v1.md.
@@ -39,7 +39,7 @@ tags:
   - name: equipments
     description: Catálogo de equipamentos por cliente, reaproveitável entre OS's
   - name: orders
-    description: Ordens de Serviço / Orçamento Técnico
+    description: Ordens de Serviço
 
 security:
   - bearerAuth: []
@@ -69,7 +69,11 @@ paths:
               schema:
                 type: object
                 properties:
-                  token: { type: string, description: "Sanctum personal access token" }
+                  token:
+                    {
+                      type: string,
+                      description: "Sanctum personal access token",
+                    }
                   user: { $ref: "#/components/schemas/User" }
         "422":
           $ref: "#/components/responses/ValidationError"
@@ -638,7 +642,8 @@ components:
       properties:
         id: { type: string, format: uuid }
         company_name: { type: string, description: "Razão social" }
-        tax_id: { type: string, description: "CNPJ", example: "31.233.218/0001-10" }
+        tax_id:
+          { type: string, description: "CNPJ", example: "31.233.218/0001-10" }
         requester: { type: ["string", "null"], description: "Solicitante" }
         department: { type: ["string", "null"], description: "Setor" }
         phone: { type: ["string", "null"], description: "Telefone" }
@@ -698,10 +703,15 @@ components:
       properties:
         id: { type: string, format: uuid }
         client_id: { type: string, format: uuid }
-        name: { type: string, description: "Nome/tipo do equipamento, ex.: Bisturi" }
+        name:
+          {
+            type: string,
+            description: "Nome/tipo do equipamento, ex.: Bisturi",
+          }
         brand: { type: ["string", "null"], description: "Marca" }
         model: { type: ["string", "null"], description: "Modelo" }
-        serial_number: { type: ["string", "null"], description: "Número de série" }
+        serial_number:
+          { type: ["string", "null"], description: "Número de série" }
         asset_tag: { type: ["string", "null"], description: "Patrimônio" }
         accessories: { type: ["string", "null"], description: "Acessórios" }
         created_at: { type: string, format: date-time }
@@ -760,7 +770,12 @@ components:
     OrderPdf:
       type: object
       properties:
-        url: { type: string, format: uri, description: "URL assinada do Object Storage" }
+        url:
+          {
+            type: string,
+            format: uri,
+            description: "URL assinada do Object Storage",
+          }
         generated_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time }
 
@@ -778,19 +793,32 @@ components:
         client: { $ref: "#/components/schemas/Client" }
         user: { $ref: "#/components/schemas/User" }
         picked_up: { type: boolean, description: "Retirado" }
-        warranty: { type: boolean, description: "Garantia (tipo de atendimento)" }
-        technical_training: { type: boolean, description: "Treinamento técnico" }
+        warranty:
+          { type: boolean, description: "Garantia (tipo de atendimento)" }
+        technical_training:
+          { type: boolean, description: "Treinamento técnico" }
         on_site_quote: { type: boolean, description: "Orç. local" }
         rental: { type: boolean, description: "Locação" }
-        reported_defect: { type: ["string", "null"], description: "Defeito apresentado" }
-        maintenance_plan: { type: ["string", "null"], description: "Manutenção a aplicar" }
+        reported_defect:
+          { type: ["string", "null"], description: "Defeito apresentado" }
+        maintenance_plan:
+          { type: ["string", "null"], description: "Manutenção a aplicar" }
         notes: { type: ["string", "null"], description: "Observação" }
-        payment_method: { type: ["string", "null"], description: "Forma de pagamento" }
-        warranty_period: { type: ["string", "null"], description: "Garantia (prazo)" }
-        proposal_validity: { type: ["string", "null"], description: "Validade da proposta" }
-        labor_cost: { type: ["number", "null"], format: float, description: "Valor da mão de obra" }
+        payment_method:
+          { type: ["string", "null"], description: "Forma de pagamento" }
+        warranty_period:
+          { type: ["string", "null"], description: "Garantia (prazo)" }
+        proposal_validity:
+          { type: ["string", "null"], description: "Validade da proposta" }
+        labor_cost:
+          {
+            type: ["number", "null"],
+            format: float,
+            description: "Valor da mão de obra",
+          }
         total: { type: number, format: float }
-        certificate_number: { type: ["string", "null"], description: "Nº do certificado" }
+        certificate_number:
+          { type: ["string", "null"], description: "Nº do certificado" }
         equipments:
           type: array
           items: { $ref: "#/components/schemas/OrderEquipmentSnapshot" }

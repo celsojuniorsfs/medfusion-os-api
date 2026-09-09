@@ -1,6 +1,6 @@
 # Med Fusion Manutenção e Venda Clínica Hospitalar Ltda.
 
-Backend (Laravel API) do sistema de Ordem de Serviço / Orçamento Técnico. Consumido pelo frontend
+Backend (Laravel API) do sistema de Ordem de Serviço. Consumido pelo frontend
 Angular em [medfusion-os-web](https://github.com/celsojuniorsfs/medfusion-os-web).
 
 ## Stack

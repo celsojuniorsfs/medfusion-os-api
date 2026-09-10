@@ -115,7 +115,7 @@ paths:
       parameters:
         - name: search
           in: query
-          description: Busca por razão social (company_name) ou CNPJ (tax_id)
+          description: Busca por razão social/nome (company_name) ou CPF/CNPJ (tax_id)
           schema: { type: string }
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PerPage"
@@ -641,9 +641,13 @@ components:
         português — são dados de negócio do cliente, não nomenclatura do sistema.
       properties:
         id: { type: string, format: uuid }
-        company_name: { type: string, description: "Razão social" }
+        company_name: { type: string, description: "Razão social (pessoa jurídica) ou nome (pessoa física)" }
         tax_id:
-          { type: string, description: "CNPJ", example: "31.233.218/0001-10" }
+          {
+            type: string,
+            description: "CNPJ (pessoa jurídica) ou CPF (pessoa física)",
+            example: "31.233.218/0001-10",
+          }
         requester: { type: ["string", "null"], description: "Solicitante" }
         department: { type: ["string", "null"], description: "Setor" }
         phone: { type: ["string", "null"], description: "Telefone" }

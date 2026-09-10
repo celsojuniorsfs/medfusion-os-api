@@ -3,7 +3,7 @@
 namespace Modules\Clients\Presentation\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Modules\Clients\Presentation\Http\Rules\ValidCnpj;
+use Modules\Clients\Presentation\Http\Rules\ValidTaxId;
 
 /**
  * Reutilizada em store e update — o schema ClientInput do openapi.yaml é o mesmo pros dois.
@@ -22,7 +22,7 @@ class ClientRequest extends FormRequest
     {
         return [
             'company_name' => ['required', 'string', 'max:255'],
-            'tax_id' => ['required', 'string', new ValidCnpj],
+            'tax_id' => ['required', 'string', new ValidTaxId],
             'requester' => ['nullable', 'string', 'max:255'],
             'department' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:255'],

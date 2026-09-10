@@ -26,9 +26,18 @@ class ClientController
 
         $clients = Client::query()
             ->when($search, function ($query) use ($search) {
-                $query->where('name', 'like', "%{$search}%")
-                    ->orWhere('trade_name', 'like', "%{$search}%")
-                    ->orWhere('tax_id', 'like', "%{$search}%");
+                // tax_id é gravado só com dígitos (ver migration) — buscar "111.444.777-35" como
+                // o usuário vê na tela não bateria com "11144477735" sem essa normalização.
+                $digitsOnly = preg_replace('/\D/', '', $search);
+
+                $query->where(function ($q) use ($search, $digitsOnly) {
+                    $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('trade_name', 'like', "%{$search}%");
+
+                    if ($digitsOnly !== '') {
+                        $q->orWhere('tax_id', 'like', "%{$digitsOnly}%");
+                    }
+                });
             })
             ->orderBy('name')
             ->paginate($perPage);

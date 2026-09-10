@@ -68,6 +68,20 @@ class ClientsHttpTest extends TestCase
         $response->assertJsonStructure(['data', 'links', 'meta']);
     }
 
+    public function test_lists_clients_searching_by_tax_id_with_punctuation(): void
+    {
+        // tax_id é gravado só com dígitos — buscar como o usuário vê na tela (com pontuação)
+        // precisa achar mesmo assim.
+        $this->aClientId('Hospital São Lucas', '31233218000110');
+
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->getJson('/api/v1/clients?search='.urlencode('31.233.218/0001-10'));
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('data.0.name', 'Hospital São Lucas');
+    }
+
     public function test_creates_a_company_client_with_all_fields(): void
     {
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')

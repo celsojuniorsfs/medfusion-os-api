@@ -34,16 +34,28 @@ em [`docs/architecture.md`](./docs/architecture.md).
 
 ## Como rodar localmente
 
+Todo o backend roda em Docker via [Laravel Sail](https://laravel.com/docs/sail) — não precisa de
+PHP/Composer instalados na máquina, só Docker.
+
 ```bash
-composer install
 cp .env.example .env
-php artisan key:generate
 # Preencher ADMIN_EMAIL / ADMIN_PASSWORD no .env antes do seed abaixo
 
-docker compose up -d          # MySQL 8 (porta 3306; se já tiver algo nessa porta, mude
-                               # DB_PORT no .env — o compose lê a mesma variável)
-php artisan migrate --seed
-php artisan serve             # http://localhost:8000
+docker compose up -d                                    # laravel.test (porta 8000) + mysql
+docker compose exec laravel.test composer install
+docker compose exec laravel.test php artisan key:generate
+docker compose exec laravel.test php artisan migrate --seed
+```
+
+A partir daqui, rode qualquer comando artisan/composer/pint prefixado com
+`docker compose exec laravel.test` (ex.: `docker compose exec laravel.test php artisan test`).
+
+Mailpit (captura e-mails, ainda sem uso — feature de notificação não implementada), um worker de
+fila dedicado e o Adminer (UI do MySQL) ficam atrás de um profile, pra não pesar na máquina sem
+necessidade:
+
+```bash
+docker compose --profile extra up -d   # + mailpit (:8025), queue, adminer (:8080)
 ```
 
 Testar o login:
@@ -58,7 +70,7 @@ Depois de corrigir um bug de projeção (ou adicionar uma coluna a um read model
 dados a partir dos eventos gravados:
 
 ```bash
-php artisan event-sourcing:replay
+docker compose exec laravel.test php artisan event-sourcing:replay
 ```
 
 ## Documentação

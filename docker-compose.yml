@@ -1,21 +1,106 @@
 services:
-  mysql:
-    image: mysql:8
-    restart: unless-stopped
-    environment:
-      MYSQL_DATABASE: medfusion_os
-      MYSQL_ROOT_PASSWORD: secret
-    ports:
-      # Lê DB_PORT do .env na mesma pasta (o Docker Compose faz isso automaticamente).
-      # Padrão 3306; se já tiver outro MySQL/serviço nessa porta, mude DB_PORT no seu .env.
-      - "${DB_PORT:-3306}:3306"
-    volumes:
-      - mysql-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-psecret"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
+    laravel.test:
+        build:
+            context: ./vendor/laravel/sail/runtimes/8.4
+            dockerfile: Dockerfile
+            args:
+                WWWGROUP: '${WWWGROUP}'
+        image: sail-8.4/app
+        restart: unless-stopped
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
+        ports:
+            # Fixo em 8000 pra não quebrar o frontend Angular (environment.ts) nem o README, que
+            # já assumem essa porta.
+            - '${APP_PORT:-8000}:80'
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+            XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
+            XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
+            IGNITION_LOCAL_SITES_PATH: '${PWD}'
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - sail
+        depends_on:
+            - mysql
+    mysql:
+        image: 'mysql:8.4'
+        restart: unless-stopped
+        ports:
+            # FORWARD_DB_PORT é só o mapeamento externo (host → container), pra uma ferramenta
+            # de fora do Docker acessar o MySQL (ex.: TablePlus). DB_PORT continua 3306 no .env —
+            # é a porta que o container laravel.test usa pra falar com "mysql" DENTRO da rede do
+            # Compose, que nunca passa pela porta publicada aqui.
+            - '${FORWARD_DB_PORT:-3306}:3306'
+        environment:
+            MYSQL_ROOT_PASSWORD: '${DB_PASSWORD}'
+            MYSQL_ROOT_HOST: '%'
+            MYSQL_DATABASE: '${DB_DATABASE}'
+            MYSQL_USER: '${DB_USERNAME}'
+            MYSQL_PASSWORD: '${DB_PASSWORD}'
+            MYSQL_ALLOW_EMPTY_PASSWORD: 1
+        volumes:
+            - 'sail-mysql:/var/lib/mysql'
+            - './vendor/laravel/sail/database/mysql/create-testing-database.sh:/docker-entrypoint-initdb.d/10-create-testing-database.sh'
+        networks:
+            - sail
+        healthcheck:
+            test:
+                - CMD
+                - mysqladmin
+                - ping
+                - '-p${DB_PASSWORD}'
+            interval: 5s
+            timeout: 5s
+            retries: 20
 
+    # Os três serviços abaixo não têm uso real no código ainda (fila e e-mail são só
+    # documentados hoje — ver docs/api-conventions.md § Notificação automática, ainda não
+    # implementada). Ficam atrás do profile "extra" pra não pesar na RAM por padrão:
+    # `docker compose --profile extra up -d` liga os três quando precisar.
+    mailpit:
+        image: 'axllent/mailpit:latest'
+        restart: unless-stopped
+        profiles: ['extra']
+        ports:
+            - '${FORWARD_MAILPIT_PORT:-1025}:1025'
+            - '${FORWARD_MAILPIT_DASHBOARD_PORT:-8025}:8025'
+        networks:
+            - sail
+    queue:
+        build:
+            context: ./vendor/laravel/sail/runtimes/8.4
+            dockerfile: Dockerfile
+            args:
+                WWWGROUP: '${WWWGROUP}'
+        image: sail-8.4/app
+        restart: unless-stopped
+        profiles: ['extra']
+        command: php artisan queue:work --tries=3
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - sail
+        depends_on:
+            - mysql
+    adminer:
+        image: adminer
+        restart: unless-stopped
+        profiles: ['extra']
+        ports:
+            - '8080:8080'
+        networks:
+            - sail
+        depends_on:
+            - mysql
+networks:
+    sail:
+        driver: bridge
 volumes:
-  mysql-data:
+    sail-mysql:
+        driver: local

@@ -88,6 +88,33 @@ class ClientsHttpTest extends TestCase
         $response->assertJsonValidationErrors('tax_id');
     }
 
+    public function test_creates_a_client_with_cpf(): void
+    {
+        // Parte dos clientes cadastra em nome próprio (pessoa física), não com CNPJ — feedback
+        // do Augusto em 10/09/2026.
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->postJson('/api/v1/clients', [
+                'company_name' => 'João da Silva',
+                'tax_id' => '111.444.777-35',
+            ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.company_name', 'João da Silva');
+        $this->assertDatabaseHas('clients', ['company_name' => 'João da Silva']);
+    }
+
+    public function test_rejects_creation_with_invalid_cpf_checksum(): void
+    {
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->postJson('/api/v1/clients', [
+                'company_name' => 'João da Silva',
+                'tax_id' => '111.444.777-36', // dígito verificador errado
+            ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('tax_id');
+    }
+
     public function test_shows_a_client(): void
     {
         $id = $this->aClientId();

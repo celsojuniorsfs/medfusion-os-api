@@ -7,10 +7,17 @@
 
 ## Local
 
-- MySQL 8 local (mesma engine da produção, para não caçar bugs de dialeto SQL depois).
+- **Backend inteiro em Docker** ([Laravel Sail](https://laravel.com/docs/sail), decidido em
+  10/09/2026): `docker compose up -d` sobe `laravel.test` (`http://localhost:8000`) e `mysql`
+  (MySQL 8.4, mesma major da produção — para não caçar bugs de dialeto SQL depois). Comandos
+  artisan/composer rodam via `docker compose exec laravel.test ...` (ver README).
+- Mailpit, um worker de fila dedicado e o Adminer ficam atrás do profile `extra`
+  (`docker compose --profile extra up -d`) — sem uso real ainda (fila e e-mail são só
+  documentados, a notificação automática da OS não está implementada), então não rodam por
+  padrão.
 - `.env` a partir de [`.env.example`](../.env.example) (versionado nesta issue).
-- Backend: `php artisan serve` em `http://localhost:8000`.
-- Frontend: `ng serve`, `environment.ts` apontando `apiUrl: 'http://localhost:8000/api/v1'`.
+- Frontend: `ng serve`, `environment.ts` apontando `apiUrl: 'http://localhost:8000/api/v1'` —
+  roda fora do Docker, sem mudança.
 - CORS liberado para `http://localhost:4200` (porta padrão do Angular).
 
 ## Produção — Laravel Cloud

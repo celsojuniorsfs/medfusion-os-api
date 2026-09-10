@@ -2,6 +2,7 @@
 
 namespace Modules\Clients\Domain;
 
+use Modules\Clients\Domain\Enums\PersonType;
 use Modules\Clients\Domain\Events\ClientRegistered;
 use Modules\Clients\Domain\Events\ClientRemoved;
 use Modules\Clients\Domain\Events\ClientUpdated;
@@ -12,34 +13,46 @@ class ClientAggregate extends AggregateRoot
     private bool $removed = false;
 
     public function register(
-        string $companyName,
+        PersonType $personType,
+        string $name,
         string $taxId,
+        ?string $tradeName,
+        ?string $stateRegistration,
         ?string $requester,
         ?string $department,
         ?string $phone,
+        ?string $email,
         ?string $address,
         ?string $city,
+        ?string $state,
         ?string $postalCode,
     ): self {
         $this->recordThat(new ClientRegistered(
-            $companyName, $taxId, $requester, $department, $phone, $address, $city, $postalCode,
+            $personType->value, $name, $taxId, $tradeName, $stateRegistration, $requester,
+            $department, $phone, $email, $address, $city, $state, $postalCode,
         ));
 
         return $this;
     }
 
     public function update(
-        string $companyName,
+        PersonType $personType,
+        string $name,
         string $taxId,
+        ?string $tradeName,
+        ?string $stateRegistration,
         ?string $requester,
         ?string $department,
         ?string $phone,
+        ?string $email,
         ?string $address,
         ?string $city,
+        ?string $state,
         ?string $postalCode,
     ): self {
         $this->recordThat(new ClientUpdated(
-            $companyName, $taxId, $requester, $department, $phone, $address, $city, $postalCode,
+            $personType->value, $name, $taxId, $tradeName, $stateRegistration, $requester,
+            $department, $phone, $email, $address, $city, $state, $postalCode,
         ));
 
         return $this;

@@ -115,7 +115,7 @@ paths:
       parameters:
         - name: search
           in: query
-          description: Busca por razão social/nome (company_name) ou CPF/CNPJ (tax_id)
+          description: Busca por nome/razão social (name), nome fantasia (trade_name) ou CPF/CNPJ (tax_id)
           schema: { type: string }
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PerPage"
@@ -638,36 +638,62 @@ components:
       type: object
       description: >
         Nomes de campo em inglês (decidido em 08/09/2026); os valores em si continuam em
-        português — são dados de negócio do cliente, não nomenclatura do sistema.
+        português — são dados de negócio do cliente, não nomenclatura do sistema. A partir de
+        10/09/2026 cobre pessoa física e jurídica explicitamente (ver person_type) — antes disso
+        o cadastro só previa pessoa jurídica.
       properties:
         id: { type: string, format: uuid }
-        company_name: { type: string, description: "Razão social (pessoa jurídica) ou nome (pessoa física)" }
+        person_type:
+          {
+            type: string,
+            enum: [individual, company],
+            description: "Pessoa física (individual) ou jurídica (company)",
+          }
+        name: { type: string, description: "Nome completo (pessoa física) ou razão social (pessoa jurídica)" }
+        trade_name: { type: ["string", "null"], description: "Nome fantasia (só pessoa jurídica)" }
         tax_id:
           {
             type: string,
-            description: "CNPJ (pessoa jurídica) ou CPF (pessoa física)",
-            example: "31.233.218/0001-10",
+            description: "CPF (pessoa física, 11 dígitos) ou CNPJ (pessoa jurídica, 14 dígitos) — só números",
+            example: "31233218000110",
           }
+        state_registration: { type: ["string", "null"], description: "Inscrição estadual (só pessoa jurídica)" }
         requester: { type: ["string", "null"], description: "Solicitante" }
         department: { type: ["string", "null"], description: "Setor" }
         phone: { type: ["string", "null"], description: "Telefone" }
+        email: { type: ["string", "null"], format: email, description: "E-mail" }
         address: { type: ["string", "null"], description: "Endereço" }
         city: { type: ["string", "null"], description: "Cidade" }
-        postal_code: { type: ["string", "null"], description: "CEP" }
+        state: { $ref: "#/components/schemas/BrazilianState" }
+        postal_code: { type: ["string", "null"], description: "CEP, só números", example: "15775000" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
+    BrazilianState:
+      type: ["string", "null"]
+      description: UF (sigla do estado)
+      enum:
+        [
+          null, AC, AL, AP, AM, BA, CE, DF, ES, GO, MA, MT, MS, MG, PA, PB, PR, PE, PI, RJ, RN,
+          RS, RO, RR, SC, SP, SE, TO,
+        ]
+
     ClientInput:
       type: object
-      required: [company_name, tax_id]
+      required: [person_type, name, tax_id]
       properties:
-        company_name: { type: string }
+        person_type: { type: string, enum: [individual, company] }
+        name: { type: string }
+        trade_name: { type: ["string", "null"] }
         tax_id: { type: string }
+        state_registration: { type: ["string", "null"] }
         requester: { type: ["string", "null"] }
         department: { type: ["string", "null"] }
         phone: { type: ["string", "null"] }
+        email: { type: ["string", "null"] }
         address: { type: ["string", "null"] }
         city: { type: ["string", "null"] }
+        state: { $ref: "#/components/schemas/BrazilianState" }
         postal_code: { type: ["string", "null"] }
 
     OrderStatus:

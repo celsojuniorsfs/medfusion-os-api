@@ -3,29 +3,59 @@
 namespace Modules\Clients\Presentation\Http\Rules;
 
 use Closure;
+use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Modules\Clients\Domain\Enums\PersonType;
 
 /**
  * Aceita CPF (pessoa física) ou CNPJ (pessoa jurídica) — a maioria dos clientes cadastra com
  * CNPJ e razão social, mas uma parte cadastra em nome próprio, com CPF (feedback do Augusto em
- * 10/09/2026). O dígito verificador é conferido pro documento certo conforme a quantidade de
- * dígitos (11 = CPF, 14 = CNPJ). A pontuação é opcional — a máscara é responsabilidade do
- * frontend, a API valida o que chegar.
+ * 10/09/2026). Desde que `person_type` virou campo explícito do cadastro (10/09/2026), o
+ * documento exigido é o do tipo declarado (via DataAwareRule, que dá acesso ao resto do payload)
+ * — CPF pra "individual", CNPJ pra "company" — em vez de só adivinhar pelo tamanho. O tamanho
+ * ainda decide se `person_type` não vier por algum motivo (defensivo). A pontuação é opcional —
+ * a máscara é responsabilidade do frontend, a API valida o que chegar.
  */
-class ValidTaxId implements ValidationRule
+class ValidTaxId implements DataAwareRule, ValidationRule
 {
+    /**
+     * @var array<string, mixed>
+     */
+    protected array $data = [];
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function setData(array $data): static
+    {
+        $this->data = $data;
+
+        return $this;
+    }
+
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
         $digits = preg_replace('/\D/', '', (string) $value);
+        $personType = $this->data['person_type'] ?? null;
 
-        $isValid = match (strlen($digits)) {
-            11 => $this->isValidCpf($digits),
-            14 => $this->isValidCnpj($digits),
-            default => false,
+        $isValid = match ($personType) {
+            PersonType::Individual->value => strlen($digits) === 11 && $this->isValidCpf($digits),
+            PersonType::Company->value => strlen($digits) === 14 && $this->isValidCnpj($digits),
+            default => match (strlen($digits)) {
+                11 => $this->isValidCpf($digits),
+                14 => $this->isValidCnpj($digits),
+                default => false,
+            },
         };
 
         if (! $isValid) {
-            $fail('O :attribute informado não é um CPF ou CNPJ válido.');
+            $message = match ($personType) {
+                PersonType::Individual->value => 'não é um CPF válido',
+                PersonType::Company->value => 'não é um CNPJ válido',
+                default => 'não é um CPF ou CNPJ válido',
+            };
+
+            $fail("O :attribute informado {$message}.");
         }
     }
 

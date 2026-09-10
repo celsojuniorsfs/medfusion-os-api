@@ -16,7 +16,10 @@ use Modules\Orders\Infrastructure\ReadModels\Order;
  */
 // "id" entra no fillable porque o ClientProjector cria a linha com o mesmo uuid do agregado
 // (identidade compartilhada agregado/projeção) — não é um id "adivinhável" vindo de input HTTP.
-#[Fillable(['id', 'company_name', 'tax_id', 'requester', 'department', 'phone', 'address', 'city', 'postal_code'])]
+#[Fillable([
+    'id', 'person_type', 'name', 'trade_name', 'tax_id', 'state_registration', 'requester',
+    'department', 'phone', 'email', 'address', 'city', 'state', 'postal_code',
+])]
 class Client extends Model
 {
     use HasFactory, HasUuids;

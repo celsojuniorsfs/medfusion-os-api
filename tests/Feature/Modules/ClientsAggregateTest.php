@@ -5,6 +5,7 @@ namespace Tests\Feature\Modules;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Modules\Clients\Domain\ClientAggregate;
+use Modules\Clients\Domain\Enums\PersonType;
 use Spatie\EventSourcing\StoredEvents\Models\EloquentStoredEvent;
 use Tests\TestCase;
 
@@ -17,13 +18,28 @@ class ClientsAggregateTest extends TestCase
         $uuid = (string) Str::uuid();
 
         ClientAggregate::retrieve($uuid)
-            ->register('Hospital São Lucas', '31.233.218/0001-10', 'Marcos', 'Manutenção', null, null, null, null)
+            ->register(
+                personType: PersonType::Company,
+                name: 'Hospital São Lucas',
+                taxId: '31233218000110',
+                tradeName: null,
+                stateRegistration: null,
+                requester: 'Marcos',
+                department: 'Manutenção',
+                phone: null,
+                email: null,
+                address: null,
+                city: null,
+                state: null,
+                postalCode: null,
+            )
             ->persist();
 
         $this->assertDatabaseHas('clients', [
             'id' => $uuid,
-            'company_name' => 'Hospital São Lucas',
-            'tax_id' => '31.233.218/0001-10',
+            'person_type' => 'company',
+            'name' => 'Hospital São Lucas',
+            'tax_id' => '31233218000110',
         ]);
         $this->assertSame(1, EloquentStoredEvent::query()->where('aggregate_uuid', $uuid)->count());
     }
@@ -33,7 +49,21 @@ class ClientsAggregateTest extends TestCase
         $uuid = (string) Str::uuid();
 
         ClientAggregate::retrieve($uuid)
-            ->register('Hospital São Lucas', '31.233.218/0001-10', null, null, null, null, null, null)
+            ->register(
+                personType: PersonType::Company,
+                name: 'Hospital São Lucas',
+                taxId: '31233218000110',
+                tradeName: null,
+                stateRegistration: null,
+                requester: null,
+                department: null,
+                phone: null,
+                email: null,
+                address: null,
+                city: null,
+                state: null,
+                postalCode: null,
+            )
             ->persist();
 
         ClientAggregate::retrieve($uuid)->remove()->persist();

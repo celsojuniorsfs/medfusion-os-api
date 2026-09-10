@@ -14,6 +14,14 @@
 > arquitetura completa (monólito modular, DDD-like, `spatie/laravel-event-sourcing`). `number` da
 > OS **não muda**: é o número de negócio (seed 1336, editável pelo técnico), sem relação com a
 > identidade do agregado.
+>
+> **Atualizado em 10/09/2026**: cadastro de cliente passa a cobrir pessoa física explicitamente,
+> não só jurídica (feedback do Augusto — parte dos clientes cadastra em nome próprio, com CPF).
+> `clients.company_name` vira `name`; novos campos `person_type` (`individual`/`company`),
+> `trade_name`, `state_registration`, `email` e `state` (UF). `tax_id` e `postal_code` passam a
+> ser gravados só com dígitos (antes ficavam com pontuação) — necessário pra constraint `unique`
+> de `tax_id` funcionar de verdade e pros tamanhos de coluna fazerem sentido; a máscara na
+> exibição é responsabilidade do frontend.
 
 ## Versionamento
 
@@ -196,13 +204,18 @@ português — ex.: `reported_defect` guarda o texto "Equipamento sem funções 
 
 | Português (planilha/conversa) | Campo (inglês) | Tabela |
 |---|---|---|
-| Razão social | `company_name` | `clients` |
-| CNPJ | `tax_id` | `clients` |
+| Tipo de pessoa (física/jurídica) | `person_type` | `clients` |
+| Nome / Razão social | `name` | `clients` |
+| Nome fantasia | `trade_name` | `clients` |
+| CPF/CNPJ | `tax_id` | `clients` |
+| Inscrição estadual | `state_registration` | `clients` |
 | Solicitante | `requester` | `clients` |
 | Setor | `department` | `clients` |
 | Telefone | `phone` | `clients` |
+| E-mail | `email` | `clients` |
 | Endereço | `address` | `clients` |
 | Cidade | `city` | `clients` |
+| UF | `state` | `clients` |
 | CEP | `postal_code` | `clients` |
 | Equipamento (nome/tipo) | `name` | `equipments`, `order_equipments` |
 | Marca | `brand` | `equipments`, `order_equipments` |

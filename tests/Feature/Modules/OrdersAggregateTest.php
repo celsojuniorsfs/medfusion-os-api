@@ -6,6 +6,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Modules\Clients\Domain\ClientAggregate;
+use Modules\Clients\Domain\Enums\PersonType;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Orders\Domain\Enums\OrderStatus;
 use Modules\Orders\Domain\Exceptions\InvalidOrderStatusTransition;
@@ -21,7 +22,21 @@ class OrdersAggregateTest extends TestCase
     {
         $uuid = (string) Str::uuid();
         ClientAggregate::retrieve($uuid)
-            ->register('Hospital São Lucas', '31.233.218/0001-10', null, null, null, null, null, null)
+            ->register(
+                personType: PersonType::Company,
+                name: 'Hospital São Lucas',
+                taxId: '31233218000110',
+                tradeName: null,
+                stateRegistration: null,
+                requester: null,
+                department: null,
+                phone: null,
+                email: null,
+                address: null,
+                city: null,
+                state: null,
+                postalCode: null,
+            )
             ->persist();
 
         return $uuid;

@@ -8,6 +8,7 @@ use Illuminate\Http\Response;
 use Modules\Clients\Application\RegisterClient;
 use Modules\Clients\Application\RemoveClient;
 use Modules\Clients\Application\UpdateClient;
+use Modules\Clients\Domain\Enums\PersonType;
 use Modules\Clients\Infrastructure\ReadModels\Client;
 use Modules\Clients\Presentation\Http\Requests\ClientRequest;
 use Modules\Clients\Presentation\Http\Resources\ClientResource;
@@ -16,7 +17,7 @@ use Modules\Orders\Infrastructure\ReadModels\Order;
 class ClientController
 {
     /**
-     * GET /clients — busca por razão social ou CNPJ (ver openapi.yaml).
+     * GET /clients — busca por nome/razão social, nome fantasia ou CPF/CNPJ (ver openapi.yaml).
      */
     public function index(Request $request): JsonResponse
     {
@@ -25,10 +26,20 @@ class ClientController
 
         $clients = Client::query()
             ->when($search, function ($query) use ($search) {
-                $query->where('company_name', 'like', "%{$search}%")
-                    ->orWhere('tax_id', 'like', "%{$search}%");
+                // tax_id é gravado só com dígitos (ver migration) — buscar "111.444.777-35" como
+                // o usuário vê na tela não bateria com "11144477735" sem essa normalização.
+                $digitsOnly = preg_replace('/\D/', '', $search);
+
+                $query->where(function ($q) use ($search, $digitsOnly) {
+                    $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('trade_name', 'like', "%{$search}%");
+
+                    if ($digitsOnly !== '') {
+                        $q->orWhere('tax_id', 'like', "%{$digitsOnly}%");
+                    }
+                });
             })
-            ->orderBy('company_name')
+            ->orderBy('name')
             ->paginate($perPage);
 
         return response()->json(ClientResource::collection($clients)->response()->getData());
@@ -83,13 +94,18 @@ class ClientController
         $data = $request->validated();
 
         return [
-            $data['company_name'],
+            PersonType::from($data['person_type']),
+            $data['name'],
             $data['tax_id'],
+            $data['trade_name'] ?? null,
+            $data['state_registration'] ?? null,
             $data['requester'] ?? null,
             $data['department'] ?? null,
             $data['phone'] ?? null,
+            $data['email'] ?? null,
             $data['address'] ?? null,
             $data['city'] ?? null,
+            $data['state'] ?? null,
             $data['postal_code'] ?? null,
         ];
     }

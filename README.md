@@ -73,6 +73,11 @@ dados a partir dos eventos gravados:
 docker compose exec laravel.test php artisan event-sourcing:replay
 ```
 
+Dashboard de monitoramento ([Laravel Pulse](https://laravel.com/docs/pulse)) em
+`http://localhost:8000/pulse` — pede usuário/senha (HTTP Basic Auth) do seed
+(`ADMIN_EMAIL`/`ADMIN_PASSWORD` do `.env`). Em `local` qualquer usuário cadastrado entra; em
+produção só quem estiver em `PULSE_ALLOWED_EMAILS` (ver `docs/ambientes.md`).
+
 ## Documentação
 
 - [`docs/architecture.md`](./docs/architecture.md) — monólito modular, DDD-like, Clean

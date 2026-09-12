@@ -125,6 +125,26 @@ em Excel), e (2) os mesmos eventos que constroem a projeção são o que um mód
 outro reagir, sem precisar inventar um "barramento de eventos" ou fila de integração separada —
 o pacote já entrega os dois com a mesma peça (`ShouldBeStored` + `Projector`/`Reactor`).
 
+## Monitoramento — Laravel Pulse é a exceção fora dos módulos
+
+O dashboard em `/pulse` ([Laravel Pulse](https://laravel.com/docs/pulse), 12/09/2026) é um pacote
+de vendor, não uma feature de negócio — não faz sentido forçá-lo dentro de `Modules/`. Duas
+consequências dessa decisão:
+
+- `resources/views/vendor/pulse/dashboard.blade.php` é o **único** Blade deste repo (que é
+  API-only pro front Angular — ver `routes/web.php`); existe só porque o Pulse é uma tela
+  server-rendered com Livewire, não porque o projeto voltou a servir HTML.
+- O gate `Gate::define('viewPulse', ...)` mora em
+  `Modules/Identity/app/Providers/IdentityServiceProvider.php::boot()`, e não em
+  `app/Providers/AppServiceProvider.php` como a documentação oficial do Pulse sugere — este
+  projeto não tem `app/` (removido de propósito, ver `bootstrap/providers.php`). Identity foi
+  escolhido por ser o módulo dono de `User` e da autenticação, a mesma coisa que o gate decide
+  sobre.
+
+Card "Servers" (CPU/memória/disco) removido do dashboard: exige o daemon `pulse:check` rodando no
+servidor, e o compute do Laravel Cloud é efêmero e gerenciado pela plataforma — não há o que medir
+aí. Detalhes de acesso (Basic Auth + allowlist de e-mail) em `docs/ambientes.md` § Monitoramento.
+
 ## Comandos úteis do nwidart/laravel-modules
 
 - `php artisan module:make <Nome> --api` — cria um módulo novo (só a parte de API; sem Blade).

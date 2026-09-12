@@ -17,7 +17,8 @@ use Modules\Orders\Infrastructure\ReadModels\Order;
 class ClientController
 {
     /**
-     * GET /clients — busca por nome/razão social, nome fantasia ou CPF/CNPJ (ver openapi.yaml).
+     * GET /clients — busca por nome/razão social, nome fantasia ou CPF/CNPJ, ordenados por
+     * cadastro mais recente primeiro (ver openapi.yaml).
      */
     public function index(Request $request): JsonResponse
     {
@@ -39,7 +40,13 @@ class ClientController
                     }
                 });
             })
-            ->orderBy('name')
+            // Mais recentes primeiro (F-mobile, 12/09/2026) — sem parâmetro de sort na API de
+            // propósito (mesma convenção já documentada pro futuro endpoint de Orders): a ordem
+            // certa é o próprio default, não algo que o cliente da API precise pedir. Ressalva:
+            // como Clients é event-sourced, created_at é quando o Projector escreveu a linha — um
+            // event-sourcing:replay reseta todo mundo pro mesmo instante, achatando a ordem até o
+            // próximo cadastro novo.
+            ->orderBy('created_at', 'desc')
             ->paginate($perPage);
 
         return response()->json(ClientResource::collection($clients)->response()->getData());

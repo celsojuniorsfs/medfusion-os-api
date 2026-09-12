@@ -82,6 +82,23 @@ class ClientsHttpTest extends TestCase
         $response->assertJsonPath('data.0.name', 'Hospital São Lucas');
     }
 
+    public function test_lists_clients_ordered_by_most_recent_first(): void
+    {
+        // Viaja no tempo entre os dois cadastros pra garantir created_at diferente de forma
+        // determinística — o id é um uuid do agregado, não é sequencial, então não dá pra
+        // desempatar por ele.
+        $this->aClientId('Hospital São Lucas', '31233218000110');
+        $this->travel(1)->minute();
+        $this->aClientId('Clínica Vida', '11222333000181');
+
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->getJson('/api/v1/clients');
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.name', 'Clínica Vida');
+        $response->assertJsonPath('data.1.name', 'Hospital São Lucas');
+    }
+
     public function test_creates_a_company_client_with_all_fields(): void
     {
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')

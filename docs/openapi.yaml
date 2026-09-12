@@ -110,7 +110,7 @@ paths:
   /clients:
     get:
       tags: [clients]
-      summary: Lista clientes com busca e paginação
+      summary: Lista clientes com busca e paginação, ordenados por cadastro mais recente primeiro
       operationId: listClients
       parameters:
         - name: search

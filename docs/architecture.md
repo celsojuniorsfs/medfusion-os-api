@@ -31,7 +31,8 @@ Modules/<Módulo>/
     Infrastructure/  Projectors/, Reactors/, ReadModels/ (Eloquent) — o lado de leitura
     Presentation/    Http/Controllers, Http/Requests, Http/Resources
     Providers/       <Módulo>ServiceProvider.php (extends ModuleServiceProvider), RouteServiceProvider
-  routes/api.php      Só nos módulos com endpoint HTTP (hoje Identity, Clients e Equipments)
+  routes/api.php      Só nos módulos com endpoint HTTP (hoje todos: Identity, Clients,
+                      Equipments e Orders)
   database/
     migrations/       Descobertas automaticamente (auto-discover.migrations, config/modules.php)
     seeders/

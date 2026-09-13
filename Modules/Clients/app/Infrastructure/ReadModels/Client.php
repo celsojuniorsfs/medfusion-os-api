@@ -6,13 +6,15 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Modules\Equipments\Infrastructure\ReadModels\Equipment;
-use Modules\Orders\Infrastructure\ReadModels\Order;
 
 /**
  * Read model do módulo Clients — construído pelo ClientProjector a partir dos eventos do
  * ClientAggregate. id é o mesmo uuid do agregado.
+ *
+ * De propósito, sem relação `equipments()`/`orders()` aqui: Clients é lido por Equipments e
+ * Orders, nunca o contrário (ver CLAUDE.md § Grafo de dependências). Este model já teve as
+ * duas — removidas na auditoria de acoplamento de 13/09/2026 por não terem nenhum consumidor
+ * (nenhum controller/resource/teste as chamava) e apontarem na direção errada do grafo.
  */
 // "id" entra no fillable porque o ClientProjector cria a linha com o mesmo uuid do agregado
 // (identidade compartilhada agregado/projeção) — não é um id "adivinhável" vindo de input HTTP.
@@ -27,20 +29,4 @@ class Client extends Model
     public $incrementing = false;
 
     protected $keyType = 'string';
-
-    /**
-     * @return HasMany<Equipment, $this>
-     */
-    public function equipments(): HasMany
-    {
-        return $this->hasMany(Equipment::class);
-    }
-
-    /**
-     * @return HasMany<Order, $this>
-     */
-    public function orders(): HasMany
-    {
-        return $this->hasMany(Order::class);
-    }
 }

@@ -142,5 +142,9 @@ sentido medir isso aqui (ver `docs/architecture.md`).
 Roda uma vez, manualmente, após o primeiro deploy bem-sucedido (issue api #57):
 
 - Usuário técnico inicial (e-mail/senha definidos fora do repositório, nunca commitados).
-- Contador de numeração da OS inicializado em **1336**, para o primeiro `next-number` da produção
-  responder `1337`.
+
+Numeração da OS **não** entra nesta lista — não existe passo de seed nem tabela de contador para
+isso (ver api #44). O piso de **1336** está embutido no código
+(`OrderService::nextNumber()`, `Modules/Orders/app/Application/OrderService.php`): com a tabela
+`orders` vazia, `MAX(number)` é `null`, e `(null ?? 1336) + 1` já responde `1337` desde o primeiro
+deploy, sem nenhuma ação manual.

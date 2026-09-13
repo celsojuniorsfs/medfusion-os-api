@@ -2,12 +2,23 @@
 
 namespace Modules\Orders\Application;
 
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Modules\Orders\Domain\Exceptions\DuplicateOrderNumberException;
 use Modules\Orders\Domain\OrderAggregate;
 use Modules\Orders\Infrastructure\ReadModels\Order;
 
 class OpenOrder
 {
+    public function __construct(private readonly OrderService $orderService) {}
+
+    /**
+     * @throws DuplicateOrderNumberException quando o número já está em uso — pelo pré-check
+     *                                       (caso comum) ou pela constraint `unique` do banco,
+     *                                       capturada dentro da transação (corrida de verdade
+     *                                       entre duas requisições simultâneas).
+     */
     public function __invoke(
         int $number,
         string $date,
@@ -26,16 +37,33 @@ class OpenOrder
         ?string $proposalValidity = null,
         ?float $laborCost = null,
     ): Order {
+        $this->orderService->assertNumberIsAvailable($number);
+
         $uuid = (string) Str::uuid();
 
-        OrderAggregate::retrieve($uuid)
-            ->open(
-                $number, $date, $clientId, $userId,
+        try {
+            DB::transaction(function () use (
+                $uuid, $number, $date, $clientId, $userId,
                 $pickedUp, $warranty, $technicalTraining, $onSiteQuote, $rental,
                 $reportedDefect, $maintenancePlan, $notes,
                 $paymentMethod, $warrantyPeriod, $proposalValidity, $laborCost,
-            )
-            ->persist();
+            ) {
+                // O OrderProjector roda síncrono, dentro desta mesma transação: se Order::create()
+                // disparar a violação da constraint `unique` de orders.number, o rollback desfaz
+                // também o insert em stored_events (mesma conexão) — sem isso, um
+                // event-sourcing:replay futuro quebraria tentando reprojetar um OrderOpened órfão.
+                OrderAggregate::retrieve($uuid)
+                    ->open(
+                        $number, $date, $clientId, $userId,
+                        $pickedUp, $warranty, $technicalTraining, $onSiteQuote, $rental,
+                        $reportedDefect, $maintenancePlan, $notes,
+                        $paymentMethod, $warrantyPeriod, $proposalValidity, $laborCost,
+                    )
+                    ->persist();
+            });
+        } catch (UniqueConstraintViolationException) {
+            throw new DuplicateOrderNumberException;
+        }
 
         return Order::findOrFail($uuid);
     }

@@ -103,6 +103,12 @@ Eventos futuros (fora desta sessão — CRUD, PDF e notificação ainda não exi
 registrados em lugar nenhum. Cada Action: gera/recebe um uuid → `Aggregate::retrieve($uuid)` →
 método de domínio → `persist()` → devolve o read model.
 
+**Exceção deliberada**: `OrderService` (api #44, `Modules/Orders/app/Application/OrderService.php`)
+não segue esse formato — é uma consulta pura sobre o read model (sugestão de próximo número de OS,
+checagem de número duplicado), sem agregado envolvido. Nome já decidido na análise do api #23
+(ver `api-conventions.md`); fica em `Application/` por ser lógica de orquestração de negócio, não
+por seguir o padrão de Actions.
+
 ## Projectors síncronos, Reactors em fila — registrados por módulo, sem auto-discovery
 
 - **Projectors** (constroem os read models) rodam síncronos — o endpoint precisa devolver o

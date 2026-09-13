@@ -50,7 +50,12 @@ return [
     |
     */
 
-    'expiration' => null,
+    // Achado do code review de 13/09/2026: `null` (nunca expira) era uma decisão consciente da
+    // F3 (ver api-conventions.md § Autenticação), mas reavaliado agora — um token vazado/perdido
+    // continuaria valendo pra sempre até alguém lembrar de revogar manualmente. 30 dias é longo o
+    // bastante para não incomodar um técnico em campo (não há fluxo de refresh token; expirar
+    // manda pro login de novo) mas limita a janela de um token comprometido a um período finito.
+    'expiration' => (int) env('SANCTUM_TOKEN_EXPIRATION_MINUTES', 60 * 24 * 30),
 
     /*
     |--------------------------------------------------------------------------

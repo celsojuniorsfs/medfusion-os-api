@@ -1,0 +1,36 @@
+name: Tests
+
+# Achado do code review de 13/09/2026 (api#54): não havia CI nenhum neste repositório — testes
+# só rodavam se alguém lembrasse de rodar `artisan test` localmente antes de abrir a PR.
+#
+# Sem serviço de banco: phpunit.xml já usa sqlite `:memory:` + cache/session/fila em array/sync
+# pros testes (ver phpunit.xml), então o job inteiro roda sem infra externa nenhuma.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite, gd, zip
+          coverage: none
+
+      - name: Instalar dependências do Composer
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Copiar .env de teste
+        run: cp .env.example .env && php artisan key:generate
+
+      - name: Rodar testes
+        run: php artisan test
+
+      - name: Checar formatação (Pint)
+        run: ./vendor/bin/pint --test

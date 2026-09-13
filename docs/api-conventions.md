@@ -40,8 +40,13 @@ Frontend (Vercel) e API (Laravel Cloud) vivem em domínios diferentes, então us
   chamada — sem cookies, sem CSRF, sem `SANCTUM_STATEFUL_DOMAINS`.
 - `POST /auth/logout` revoga apenas o token corrente
   (`$request->user()->currentAccessToken()->delete()`), não todos os tokens do usuário.
-- Sem expiração automática na v1 (`expiration` do Sanctum fica `null`). Revisão de segurança
-  fica para o backlog pós-v1, junto com múltiplos papéis de usuário.
+- Token expira em 30 dias (`config/sanctum.php`, `SANCTUM_TOKEN_EXPIRATION_MINUTES`) — revisto no
+  code review de 13/09/2026: a decisão original da F3 era `expiration` ficar `null` (nunca
+  expira), mas sem fluxo de refresh token isso deixava um token vazado/perdido válido pra sempre.
+  30 dias é longo o bastante pra não incomodar um técnico em campo, mas limita a janela de um
+  token comprometido. Múltiplos papéis de usuário continua no backlog pós-v1.
+- `POST /auth/login` tem rate limit de 5 tentativas/minuto por e-mail+IP (limiter `login`,
+  registrado em `IdentityServiceProvider::boot()`) — achado do mesmo review: não havia nenhum.
 - Rotas protegidas usam o middleware `auth:sanctum` (ver api #33).
 - Não há registro de usuário pela API — usuários são criados via seed/tinker (api #34), condizente
   com "poucos técnicos" definido no escopo.
@@ -61,8 +66,11 @@ Frontend (Vercel) e API (Laravel Cloud) vivem em domínios diferentes, então us
   `{ "message": "The given data was invalid.", "errors": { "campo": ["mensagem"] } }`.
   Não é customizado; é o que o `ValidationException` do framework já produz.
 - **Conflito (`409`)**: reservado para número de OS duplicado. Lançado explicitamente no
-  `OrderService` (ver api #44) como uma exceção própria (`DuplicateOrderNumberException`),
-  capturada no `Handler` e traduzida para `{ "message": "..." }` com status 409.
+  `OrderService` (api #44) como uma exceção própria (`DuplicateOrderNumberException`), que define
+  o próprio `render()` e devolve `{ "message": "..." }` com status 409 — não existe
+  `app/Exceptions/Handler.php` neste projeto (sem `app/`, ver `architecture.md`), então não há
+  "Handler" pra capturar nada; corrigido no code review de 13/09/2026 (texto desatualizado desde
+  a implementação do api #44, que já tinha ido pelo caminho do `render()` próprio).
 - **Demais erros** (`401`, `403`, `404`, `500`): `{ "message": "..." }`, usando o tratamento
   padrão de exceções do Laravel — nenhuma customização necessária além de garantir que
   `APP_DEBUG=false` em produção não vaze stack trace (ver `ambientes.md`).

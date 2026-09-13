@@ -2,7 +2,10 @@
 
 namespace Modules\Identity\Providers;
 
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Modules\Identity\Infrastructure\Projectors\UserProjector;
 use Modules\Identity\Infrastructure\ReadModels\User;
 use Nwidart\Modules\Support\ModuleServiceProvider;
@@ -39,5 +42,13 @@ class IdentityServiceProvider extends ModuleServiceProvider
         // F3), então em produção a liberação é por allowlist de e-mail via PULSE_ALLOWED_EMAILS.
         Gate::define('viewPulse', fn (User $user) => $this->app->environment('local')
             || in_array($user->email, config('pulse.allowed_emails'), true));
+
+        // Achado do code review de 13/09/2026: POST /auth/login não tinha nenhum rate limit —
+        // sem isso, um script podia tentar senhas sem limite contra qualquer e-mail. Chave por
+        // e-mail+IP (não só IP) para não deixar um atacante rotacionar e-mails livremente nem
+        // travar todo mundo atrás do mesmo NAT/proxy por causa de um único e-mail sob ataque.
+        RateLimiter::for('login', fn ($request) => Limit::perMinute(5)->by(
+            Str::lower((string) $request->input('email')).'|'.$request->ip(),
+        ));
     }
 }

@@ -126,8 +126,11 @@ sentido medir isso aqui (ver `docs/architecture.md`).
 
 `config/cors.php`: liberar apenas `/api/*`, com:
 
-- `allowed_origins`: domínio de produção da Vercel + padrão de preview `https://*.vercel.app`
-  (via `allowed_origins_patterns`, já que o Laravel não faz wildcard em `allowed_origins`).
+- `allowed_origins`: domínio de produção da Vercel + padrão de preview
+  `https://medfusion-os-web(-<hash-ou-branch>-<time>)?.vercel.app` (via `allowed_origins_patterns`,
+  já que o Laravel não faz wildcard em `allowed_origins`) — escopo pelo nome do projeto
+  ("medfusion-os-web"), não `*.vercel.app` genérico (corrigido no code review de 13/09/2026: o
+  padrão antigo liberava qualquer app hospedado na Vercel, não só os previews deste projeto).
 - `supports_credentials: false` — não há cookies cross-site, é tudo Bearer token.
 
 ### Backups e disponibilidade

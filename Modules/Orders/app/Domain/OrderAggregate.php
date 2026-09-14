@@ -4,9 +4,12 @@ namespace Modules\Orders\Domain;
 
 use Modules\Orders\Domain\Enums\OrderStatus;
 use Modules\Orders\Domain\Events\OrderEquipmentAttached;
+use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
 use Modules\Orders\Domain\Events\OrderItemAdded;
+use Modules\Orders\Domain\Events\OrderItemsCleared;
 use Modules\Orders\Domain\Events\OrderOpened;
 use Modules\Orders\Domain\Events\OrderStatusChanged;
+use Modules\Orders\Domain\Events\OrderUpdated;
 use Modules\Orders\Domain\Exceptions\InvalidOrderStatusTransition;
 use Spatie\EventSourcing\AggregateRoots\AggregateRoot;
 
@@ -66,6 +69,56 @@ class OrderAggregate extends AggregateRoot
     }
 
     /**
+     * PUT /orders/{id} (api#45) — mesmos campos de open(), menos number/clientId/userId, que
+     * ficam por conta do controller decidir se mudam (number passa pelo re-check de duplicidade
+     * antes de chegar aqui, ver UpdateOrder).
+     */
+    public function update(
+        int $number,
+        string $date,
+        string $clientId,
+        bool $pickedUp,
+        bool $warranty,
+        bool $technicalTraining,
+        bool $onSiteQuote,
+        bool $rental,
+        ?string $reportedDefect,
+        ?string $maintenancePlan,
+        ?string $notes,
+        ?string $paymentMethod,
+        ?string $warrantyPeriod,
+        ?string $proposalValidity,
+        ?float $laborCost,
+    ): self {
+        $this->recordThat(new OrderUpdated(
+            $number, $date, $clientId,
+            $pickedUp, $warranty, $technicalTraining, $onSiteQuote, $rental,
+            $reportedDefect, $maintenancePlan, $notes,
+            $paymentMethod, $warrantyPeriod, $proposalValidity, $laborCost,
+        ));
+
+        return $this;
+    }
+
+    /**
+     * O agregado não rastreia os ids dos equipamentos/itens já anexados (só `$status`) — "trocar
+     * a lista" é limpar tudo e anexar de novo (ver UpdateOrder), não um diff evento a evento.
+     */
+    public function clearEquipments(): self
+    {
+        $this->recordThat(new OrderEquipmentsCleared);
+
+        return $this;
+    }
+
+    public function clearItems(): self
+    {
+        $this->recordThat(new OrderItemsCleared);
+
+        return $this;
+    }
+
+    /**
      * @throws InvalidOrderStatusTransition quando a transição não está na tabela de
      *                                      api-conventions.md § Status da OS (ex.: completed → in_analysis).
      */
@@ -88,6 +141,12 @@ class OrderAggregate extends AggregateRoot
     protected function applyOrderEquipmentAttached(OrderEquipmentAttached $event): void {}
 
     protected function applyOrderItemAdded(OrderItemAdded $event): void {}
+
+    protected function applyOrderUpdated(OrderUpdated $event): void {}
+
+    protected function applyOrderEquipmentsCleared(OrderEquipmentsCleared $event): void {}
+
+    protected function applyOrderItemsCleared(OrderItemsCleared $event): void {}
 
     protected function applyOrderStatusChanged(OrderStatusChanged $event): void
     {

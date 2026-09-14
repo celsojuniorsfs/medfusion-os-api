@@ -14,4 +14,6 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('/orders/next-number', [OrderController::class, 'nextNumber']);
 
     Route::get('/orders/{id}', [OrderController::class, 'show']);
+    Route::put('/orders/{id}', [OrderController::class, 'update']);
+    Route::patch('/orders/{id}/status', [OrderController::class, 'updateStatus']);
 });

@@ -28,11 +28,21 @@ class OrderService
      * violação da constraint como rede de segurança para o caso raro de duas requisições
      * simultâneas passando por este check ao mesmo tempo).
      *
+     * $ignoreOrderId (api#45): usado por UpdateOrder pra não acusar falso-positivo quando a OS
+     * mantém o próprio número — sem isso, salvar uma OS sem mudar o número seria sempre rejeitado
+     * (o número "já existe", só que é o dela mesma).
+     *
      * @throws DuplicateOrderNumberException
      */
-    public function assertNumberIsAvailable(int $number): void
+    public function assertNumberIsAvailable(int $number, ?string $ignoreOrderId = null): void
     {
-        if (Order::where('number', $number)->exists()) {
+        $query = Order::where('number', $number);
+
+        if ($ignoreOrderId !== null) {
+            $query->whereKeyNot($ignoreOrderId);
+        }
+
+        if ($query->exists()) {
             throw new DuplicateOrderNumberException;
         }
     }

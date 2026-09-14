@@ -7,7 +7,11 @@ use Modules\Orders\Presentation\Http\Controllers\OrderController;
 // — o ->prefix('v1') abaixo fecha o "api/v1" usado no resto do projeto.
 
 Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
-    // Registrar antes de qualquer /orders/{id} (ainda não existe — vem no api #45), pra não
-    // colidir com o parâmetro de rota quando esse dia chegar.
+    Route::get('/orders', [OrderController::class, 'index']);
+    Route::post('/orders', [OrderController::class, 'store']);
+
+    // Antes de qualquer /orders/{id}, pra "next-number" não ser interpretado como um {id}.
     Route::get('/orders/next-number', [OrderController::class, 'nextNumber']);
+
+    Route::get('/orders/{id}', [OrderController::class, 'show']);
 });

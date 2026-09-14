@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Modules\Clients\Domain\ClientAggregate;
 use Modules\Clients\Domain\Enums\PersonType;
+use Modules\Equipments\Domain\EquipmentAggregate;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
 use Modules\Orders\Application\OpenOrder;
@@ -58,6 +59,33 @@ class OrdersHttpTest extends TestCase
         );
     }
 
+    private function anEquipmentId(string $clientId, string $name = 'Bisturi'): string
+    {
+        $uuid = (string) Str::uuid();
+        EquipmentAggregate::retrieve($uuid)
+            ->register($clientId, $name, 'Marca X', null, 'SN-123', null, null)
+            ->persist();
+
+        return $uuid;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function minimalOrderPayload(string $clientId, int $number = 1337): array
+    {
+        return [
+            'number' => $number,
+            'date' => '2026-09-13',
+            'client_id' => $clientId,
+            'labor_cost' => 150.0,
+            'equipments' => [
+                ['name' => 'Bisturi Elétrico'],
+            ],
+            'items' => [],
+        ];
+    }
+
     public function test_guests_cannot_access_the_next_number_endpoint(): void
     {
         $this->getJson('/api/v1/orders/next-number')->assertStatus(401);
@@ -95,5 +123,223 @@ class OrdersHttpTest extends TestCase
 
         $response->assertOk();
         $response->assertExactJson(['number' => 1501]);
+    }
+
+    public function test_guests_cannot_access_order_endpoints(): void
+    {
+        $this->getJson('/api/v1/orders')->assertStatus(401);
+        $this->postJson('/api/v1/orders', [])->assertStatus(401);
+    }
+
+    public function test_creates_an_order_with_a_new_equipment_and_no_items(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId));
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.number', 1337);
+        $response->assertJsonPath('data.status', 'open');
+        $response->assertJsonPath('data.client.id', $clientId);
+        $response->assertJsonPath('data.user.id', $user->id);
+        $response->assertJsonPath('data.total', '150.00');
+        $response->assertJsonCount(1, 'data.equipments');
+        $response->assertJsonPath('data.equipments.0.name', 'Bisturi Elétrico');
+        $response->assertJsonCount(0, 'data.items');
+
+        // O equipamento digitado na hora entra pro catálogo do cliente (ver api-conventions.md
+        // § Equipamentos) — próxima OS já pode reaproveitá-lo por equipment_id.
+        $this->assertDatabaseHas('equipments', ['client_id' => $clientId, 'name' => 'Bisturi Elétrico']);
+    }
+
+    public function test_creates_an_order_referencing_an_existing_equipment_and_with_items(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $equipmentId = $this->anEquipmentId($clientId, 'Monitor Cardíaco');
+
+        $payload = [
+            'number' => 1337,
+            'date' => '2026-09-13',
+            'client_id' => $clientId,
+            'equipments' => [['equipment_id' => $equipmentId]],
+            'items' => [
+                ['quantity' => 2, 'description' => 'Cabo de força', 'unit_price' => 25.0],
+                ['quantity' => 1, 'description' => 'Sensor', 'unit_price' => null],
+            ],
+        ];
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.equipments.0.equipment_id', $equipmentId);
+        $response->assertJsonPath('data.equipments.0.name', 'Monitor Cardíaco');
+        $response->assertJsonPath('data.equipments.0.serial_number', 'SN-123');
+        $response->assertJsonCount(2, 'data.items');
+        // total = 2 * 25 (o item sem unit_price não soma nada) = 50, sem labor_cost.
+        $response->assertJsonPath('data.total', '50.00');
+    }
+
+    public function test_rejects_creation_without_any_value_in_items_or_labor_cost(): void
+    {
+        $clientId = $this->aClientId();
+
+        $payload = [
+            'number' => 1337,
+            'date' => '2026-09-13',
+            'client_id' => $clientId,
+            'equipments' => [['name' => 'Bisturi']],
+            'items' => [['quantity' => 1, 'description' => 'Peça sem valor', 'unit_price' => null]],
+        ];
+
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('labor_cost');
+    }
+
+    public function test_rejects_creation_without_any_equipment(): void
+    {
+        $clientId = $this->aClientId();
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['equipments'] = [];
+
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('equipments');
+    }
+
+    public function test_rejects_creation_for_an_unknown_client(): void
+    {
+        $payload = $this->minimalOrderPayload((string) Str::uuid());
+
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('client_id');
+    }
+
+    public function test_rejects_creation_with_a_duplicate_number(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $this->openOrder(1337, $clientId, $user->id);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId, 1337));
+
+        $response->assertStatus(409);
+    }
+
+    public function test_shows_an_order(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $created = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId))
+            ->json('data');
+
+        $response = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders/{$created['id']}");
+
+        $response->assertOk();
+        $response->assertJsonPath('data.number', 1337);
+    }
+
+    public function test_returns_404_for_an_unknown_order(): void
+    {
+        $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->getJson('/api/v1/orders/'.Str::uuid())
+            ->assertStatus(404);
+    }
+
+    public function test_lists_orders_ordered_by_date_descending(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            ...$this->minimalOrderPayload($clientId, 1337),
+            'date' => '2026-09-01',
+        ]);
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            ...$this->minimalOrderPayload($clientId, 1338),
+            'date' => '2026-09-10',
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->getJson('/api/v1/orders');
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.number', 1338);
+        $response->assertJsonPath('data.1.number', 1337);
+        $response->assertJsonStructure(['data', 'links', 'meta']);
+    }
+
+    public function test_lists_orders_filtered_by_client(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientA = $this->aClientId();
+        $clientB = (string) Str::uuid();
+        ClientAggregate::retrieve($clientB)
+            ->register(
+                personType: PersonType::Company,
+                name: 'Clínica Vida',
+                taxId: '11222333000181',
+                tradeName: null, stateRegistration: null, requester: null, department: null,
+                phone: null, email: null, address: null, city: null, state: null, postalCode: null,
+            )
+            ->persist();
+
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $this->minimalOrderPayload($clientA, 1337));
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $this->minimalOrderPayload($clientB, 1338));
+
+        $response = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders?client_id={$clientA}");
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('data.0.number', 1337);
+    }
+
+    public function test_lists_orders_filtered_by_equipment(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $equipmentId = $this->anEquipmentId($clientId);
+
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            ...$this->minimalOrderPayload($clientId, 1337),
+            'equipments' => [['equipment_id' => $equipmentId]],
+        ]);
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId, 1338));
+
+        $response = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders?equipment_id={$equipmentId}");
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('data.0.number', 1337);
+    }
+
+    public function test_lists_orders_filtered_by_status_and_date_range(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            ...$this->minimalOrderPayload($clientId, 1337),
+            'date' => '2026-01-15',
+        ]);
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            ...$this->minimalOrderPayload($clientId, 1338),
+            'date' => '2026-09-15',
+        ]);
+
+        $byStatus = $this->actingAs($user, 'sanctum')->getJson('/api/v1/orders?status=open');
+        $byStatus->assertJsonCount(2, 'data');
+
+        $byDate = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/orders?date_from=2026-09-01&date_to=2026-09-30');
+        $byDate->assertJsonCount(1, 'data');
+        $byDate->assertJsonPath('data.0.number', 1338);
     }
 }

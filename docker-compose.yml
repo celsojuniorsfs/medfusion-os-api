@@ -25,7 +25,7 @@ services:
             - sail
         depends_on:
             - mysql
-            - redis
+            - valkey
     mysql:
         image: 'mysql:8.4'
         restart: unless-stopped
@@ -57,20 +57,23 @@ services:
             timeout: 5s
             retries: 20
     # Cache de leitura (listagens) — ver docs/architecture.md § Cache. Fora do profile "extra":
-    # ao contrário de mailpit/queue/adminer, isto já tem uso real (CACHE_STORE=redis).
-    redis:
-        image: 'redis:alpine'
+    # ao contrário de mailpit/queue/adminer, isto já tem uso real. Valkey (fork open-source do
+    # Redis, mesmo protocolo) — o Laravel não tem um driver "valkey" separado, então
+    # CACHE_STORE=redis e as variáveis REDIS_* continuam com esse nome de propósito: é a
+    # nomenclatura do driver do framework, não o nome do software rodando aqui.
+    valkey:
+        image: 'valkey/valkey:8-alpine'
         restart: unless-stopped
         ports:
             - '${FORWARD_REDIS_PORT:-6379}:6379'
         volumes:
-            - 'sail-redis:/data'
+            - 'sail-valkey:/data'
         networks:
             - sail
         healthcheck:
             test:
                 - CMD
-                - redis-cli
+                - valkey-cli
                 - ping
             retries: 3
             timeout: 5s
@@ -123,5 +126,5 @@ networks:
 volumes:
     sail-mysql:
         driver: local
-    sail-redis:
+    sail-valkey:
         driver: local

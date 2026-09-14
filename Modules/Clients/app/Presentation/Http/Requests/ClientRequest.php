@@ -58,8 +58,9 @@ class ClientRequest extends FormRequest
             'state_registration' => ['nullable', 'string', 'max:255'],
             'requester' => ['nullable', 'string', 'max:255'],
             'department' => ['nullable', 'string', 'max:255'],
-            'phone' => ['nullable', 'string', 'max:255'],
-            'email' => ['nullable', 'email', 'max:255'],
+            // Obrigatórios desde api#91 — antes eram nullable.
+            'phone' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255'],
             'address' => ['nullable', 'string', 'max:255'],
             'city' => ['nullable', 'string', 'max:255'],
             'state' => ['nullable', 'string', 'size:2', Rule::in(self::BRAZILIAN_STATES)],

@@ -680,7 +680,7 @@ components:
 
     ClientInput:
       type: object
-      required: [person_type, name, tax_id]
+      required: [person_type, name, tax_id, email, phone]
       properties:
         person_type: { type: string, enum: [individual, company] }
         name: { type: string }

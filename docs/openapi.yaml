@@ -212,6 +212,30 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /cep/{cep}:
+    get:
+      tags: [clients]
+      summary: Consulta um CEP (proxy cacheado do ViaCEP), usado pra preencher o endereço automaticamente no cadastro de cliente
+      operationId: getCep
+      parameters:
+        - name: cep
+          in: path
+          required: true
+          description: 8 dígitos, com ou sem pontuação
+          schema: { type: string, example: "15775000" }
+      responses:
+        "200":
+          description: >
+            Endereço encontrado, ou `{ "erro": true }` quando o ViaCEP não reconhece o CEP —
+            mesmo shape que o ViaCEP devolve, sem reformatação.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cep" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /clients/{id}/equipments:
     parameters:
       - $ref: "#/components/parameters/ClientId"
@@ -695,6 +719,27 @@ components:
         city: { type: ["string", "null"] }
         state: { $ref: "#/components/schemas/BrazilianState" }
         postal_code: { type: ["string", "null"] }
+
+    Cep:
+      type: object
+      description: >
+        Mesmo shape que o ViaCEP (https://viacep.com.br) devolve, repassado sem reformatação —
+        ver CepController. `erro: true` é a forma do ViaCEP dizer "CEP não encontrado" (sem os
+        demais campos).
+      properties:
+        cep: { type: string }
+        logradouro: { type: string }
+        complemento: { type: string }
+        bairro: { type: string }
+        localidade: { type: string }
+        uf: { type: string }
+        estado: { type: string }
+        regiao: { type: string }
+        ibge: { type: string }
+        gia: { type: string }
+        ddd: { type: string }
+        siafi: { type: string }
+        erro: { type: boolean }
 
     OrderStatus:
       type: string

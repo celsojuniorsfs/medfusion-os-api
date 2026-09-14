@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Modules\Clients\Presentation\Http\Controllers\CepController;
 use Modules\Clients\Presentation\Http\Controllers\ClientController;
 
 // Carregadas pelo RouteServiceProvider do módulo, dentro de Route::middleware('api')->prefix('api')
@@ -12,4 +13,6 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('/clients/{id}', [ClientController::class, 'show']);
     Route::put('/clients/{id}', [ClientController::class, 'update']);
     Route::delete('/clients/{id}', [ClientController::class, 'destroy']);
+    // Proxy pro ViaCEP (web#86) — ver CepController.
+    Route::get('/cep/{cep}', [CepController::class, 'show']);
 });

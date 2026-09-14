@@ -143,6 +143,8 @@ class ClientsHttpTest extends TestCase
                 'person_type' => 'individual',
                 'name' => 'João da Silva',
                 'tax_id' => '111.444.777-35',
+                'email' => 'joao@example.com',
+                'phone' => '(17) 99999-9999',
             ]);
 
         $response->assertCreated();
@@ -160,7 +162,35 @@ class ClientsHttpTest extends TestCase
             ->postJson('/api/v1/clients', ['tax_id' => '31.233.218/0001-10']);
 
         $response->assertStatus(422);
-        $response->assertJsonValidationErrors(['person_type', 'name']);
+        $response->assertJsonValidationErrors(['person_type', 'name', 'email', 'phone']);
+    }
+
+    public function test_rejects_creation_without_an_email(): void
+    {
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->postJson('/api/v1/clients', [
+                'person_type' => 'company',
+                'name' => 'Hospital São Lucas',
+                'tax_id' => '31.233.218/0001-10',
+                'phone' => '(17) 99999-9999',
+            ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('email');
+    }
+
+    public function test_rejects_creation_without_a_phone(): void
+    {
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->postJson('/api/v1/clients', [
+                'person_type' => 'company',
+                'name' => 'Hospital São Lucas',
+                'tax_id' => '31.233.218/0001-10',
+                'email' => 'contato@saolucas.example',
+            ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('phone');
     }
 
     public function test_rejects_creation_with_invalid_person_type(): void
@@ -253,6 +283,7 @@ class ClientsHttpTest extends TestCase
                 'person_type' => 'company',
                 'name' => 'Hospital São Lucas',
                 'tax_id' => '31.233.218/0001-10',
+                'phone' => '(17) 99999-9999',
                 'email' => 'não-é-um-email',
             ]);
 
@@ -288,6 +319,8 @@ class ClientsHttpTest extends TestCase
                 'person_type' => 'company',
                 'name' => 'Hospital São Lucas — Unidade Centro',
                 'tax_id' => '31.233.218/0001-10',
+                'email' => 'contato@saolucas.example',
+                'phone' => '(17) 99999-9999',
             ]);
 
         $response->assertOk();
@@ -303,6 +336,8 @@ class ClientsHttpTest extends TestCase
                 'person_type' => 'company',
                 'name' => 'Hospital São Lucas — Unidade Centro',
                 'tax_id' => '31.233.218/0001-10', // o mesmo tax_id do próprio cliente
+                'email' => 'contato@saolucas.example',
+                'phone' => '(17) 99999-9999',
             ]);
 
         $response->assertOk();

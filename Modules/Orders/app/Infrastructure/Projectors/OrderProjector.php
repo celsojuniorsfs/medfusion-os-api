@@ -2,6 +2,7 @@
 
 namespace Modules\Orders\Infrastructure\Projectors;
 
+use Illuminate\Support\Facades\Cache;
 use Modules\Orders\Domain\Events\OrderEquipmentAttached;
 use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
 use Modules\Orders\Domain\Events\OrderItemAdded;
@@ -39,6 +40,8 @@ class OrderProjector extends Projector
             'total' => $event->laborCost ?? 0,
             'status' => 'open',
         ]);
+
+        $this->forgetCache();
     }
 
     public function onOrderEquipmentAttached(OrderEquipmentAttached $event): void
@@ -53,6 +56,8 @@ class OrderProjector extends Projector
             'asset_tag' => $event->assetTag,
             'accessories' => $event->accessories,
         ]);
+
+        $this->forgetCache();
     }
 
     public function onOrderItemAdded(OrderItemAdded $event): void
@@ -71,6 +76,8 @@ class OrderProjector extends Projector
         // dois lugares (create + update).
         $itemsTotal = $order->items()->selectRaw('COALESCE(SUM(quantity * unit_price), 0) as total')->value('total');
         $order->update(['total' => ($order->labor_cost ?? 0) + $itemsTotal]);
+
+        $this->forgetCache();
     }
 
     public function onOrderStatusChanged(OrderStatusChanged $event): void
@@ -78,6 +85,8 @@ class OrderProjector extends Projector
         Order::whereKey($event->aggregateRootUuid())->update([
             'status' => $event->to,
         ]);
+
+        $this->forgetCache();
     }
 
     /**
@@ -109,11 +118,15 @@ class OrderProjector extends Projector
             'labor_cost' => $event->laborCost,
             'total' => ($event->laborCost ?? 0) + $itemsTotal,
         ]);
+
+        $this->forgetCache();
     }
 
     public function onOrderEquipmentsCleared(OrderEquipmentsCleared $event): void
     {
         OrderEquipment::where('order_id', $event->aggregateRootUuid())->delete();
+
+        $this->forgetCache();
     }
 
     public function onOrderItemsCleared(OrderItemsCleared $event): void
@@ -123,5 +136,17 @@ class OrderProjector extends Projector
         OrderItem::where('order_id', $order->id)->delete();
 
         $order->update(['total' => $order->labor_cost ?? 0]);
+
+        $this->forgetCache();
+    }
+
+    /**
+     * Invalida a listagem em cache (ver docs/architecture.md § Cache) — uma tag por módulo,
+     * limpa por inteiro a cada evento seu, em vez de TTL: o Projector já é o único lugar que
+     * escreve no read model, então vira também o único lugar que invalida o cache dele.
+     */
+    private function forgetCache(): void
+    {
+        Cache::tags(['orders'])->flush();
     }
 }

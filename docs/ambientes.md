@@ -76,9 +76,20 @@ conexão):
 | `FRONTEND_URL` | URL de produção do frontend na Vercel, usada para montar o CORS e links |
 | `FILESYSTEM_DISK` | driver do Object Storage (S3-compatível) |
 | `SESSION_DRIVER` | `database` (evita depender do filesystem efêmero) |
-| `CACHE_STORE` | `database` na v1 — sem Redis/KV Store contratado ainda; revisitar se latência de cache virar gargalo |
+| `CACHE_STORE` | `redis` — **pré-requisito de deploy** (ver aviso abaixo), não mais `database`. Nome do driver do Laravel; o servidor real anexado é Valkey, não Redis (ver `docs/architecture.md` § Cache) |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | credenciais do Valkey anexado ao environment (KV Store do Laravel Cloud, ou serviço equivalente) — nome de variável `REDIS_*` por convenção do driver, aponta pro Valkey |
 | `QUEUE_CONNECTION` | `database` — usada para enfileirar o envio de e-mail/WhatsApp da OS (ver abaixo); PDF continua gerado de forma síncrona no request |
 | `PULSE_ALLOWED_EMAILS` | e-mails (separados por vírgula) autorizados a abrir `/pulse` — ver "Monitoramento" abaixo |
+
+**⚠️ Pré-requisito de deploy (desde a introdução do cache de listagens, ver
+`docs/architecture.md` § Cache)**: o código passou a chamar `Cache::tags([...])` em toda
+listagem e em todo Projector — `database` (o driver usado até aqui) **não suporta tags** e
+lançaria `BadMethodCallException` em produção, quebrando com 500 **todo** GET de listagem e
+**toda** escrita (cadastro/edição/remoção) de Clients, Equipments e Orders, não só a listagem.
+Antes de fazer o deploy desta mudança: anexar um recurso **Valkey** (fork open-source do Redis,
+mesmo protocolo — ver `docs/architecture.md` § Cache) ao environment de produção no Laravel
+Cloud e trocar `CACHE_STORE` pra `redis` no painel (nome do driver do Laravel, não do software)
+— os dois passos precisam acontecer juntos, nunca só um dos dois.
 
 **Frontend (Vercel)** — não são variáveis do Laravel, mas fecham o par: `environment.ts` /
 `environment.prod.ts` do Angular trazem `apiUrl` apontando para a API de cada ambiente.

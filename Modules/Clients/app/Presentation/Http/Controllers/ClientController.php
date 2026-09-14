@@ -5,6 +5,7 @@ namespace Modules\Clients\Presentation\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Modules\Clients\Application\RegisterClient;
 use Modules\Clients\Application\RemoveClient;
@@ -25,38 +26,56 @@ class ClientController
      */
     public function index(Request $request): JsonResponse
     {
-        $search = $request->query('search');
+        // Cache de listagem (ver docs/architecture.md § Cache) — chave é a própria URL completa
+        // (cobre search/page/per_page de uma vez, sem listar cada parâmetro manualmente).
+        // Invalidado por inteiro a cada evento do módulo (ClientProjector), não por TTL: nunca
+        // serve dado desatualizado, então o TTL aqui é só um limite de segurança.
+        $data = Cache::tags(['clients'])->remember(
+            'clients:index:'.sha1($request->fullUrl()),
+            now()->addHour(),
+            function () use ($request) {
+                $search = $request->query('search');
 
-        // Achado do code review de 13/09/2026: já documentado em openapi.yaml (parâmetro
-        // PerPage: minimum 1, maximum 100) mas nunca aplicado aqui — um per_page=999999 (ou 0/
-        // negativo) passava direto pro paginate(). Clamp deixa o código fiel ao contrato.
-        $perPage = min(100, max(1, (int) $request->query('per_page', 15)));
+                // Achado do code review de 13/09/2026: já documentado em openapi.yaml (parâmetro
+                // PerPage: minimum 1, maximum 100) mas nunca aplicado aqui — um per_page=999999
+                // (ou 0/negativo) passava direto pro paginate(). Clamp deixa o código fiel ao
+                // contrato.
+                $perPage = min(100, max(1, (int) $request->query('per_page', 15)));
 
-        $clients = Client::query()
-            ->when($search, function ($query) use ($search) {
-                // tax_id é gravado só com dígitos (ver migration) — buscar "111.444.777-35" como
-                // o usuário vê na tela não bateria com "11144477735" sem essa normalização.
-                $digitsOnly = preg_replace('/\D/', '', $search);
+                $clients = Client::query()
+                    ->when($search, function ($query) use ($search) {
+                        // tax_id é gravado só com dígitos (ver migration) — buscar
+                        // "111.444.777-35" como o usuário vê na tela não bateria com
+                        // "11144477735" sem essa normalização.
+                        $digitsOnly = preg_replace('/\D/', '', $search);
 
-                $query->where(function ($q) use ($search, $digitsOnly) {
-                    $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('trade_name', 'like', "%{$search}%");
+                        $query->where(function ($q) use ($search, $digitsOnly) {
+                            $q->where('name', 'like', "%{$search}%")
+                                ->orWhere('trade_name', 'like', "%{$search}%");
 
-                    if ($digitsOnly !== '') {
-                        $q->orWhere('tax_id', 'like', "%{$digitsOnly}%");
-                    }
-                });
-            })
-            // Mais recentes primeiro (F-mobile, 12/09/2026) — sem parâmetro de sort na API de
-            // propósito (mesma convenção já documentada pro futuro endpoint de Orders): a ordem
-            // certa é o próprio default, não algo que o cliente da API precise pedir. Ressalva:
-            // como Clients é event-sourced, created_at é quando o Projector escreveu a linha — um
-            // event-sourcing:replay reseta todo mundo pro mesmo instante, achatando a ordem até o
-            // próximo cadastro novo.
-            ->orderBy('created_at', 'desc')
-            ->paginate($perPage);
+                            if ($digitsOnly !== '') {
+                                $q->orWhere('tax_id', 'like', "%{$digitsOnly}%");
+                            }
+                        });
+                    })
+                    // Mais recentes primeiro (F-mobile, 12/09/2026) — sem parâmetro de sort na
+                    // API de propósito (mesma convenção já documentada pro futuro endpoint de
+                    // Orders): a ordem certa é o próprio default, não algo que o cliente da API
+                    // precise pedir. Ressalva: como Clients é event-sourced, created_at é quando
+                    // o Projector escreveu a linha — um event-sourcing:replay reseta todo mundo
+                    // pro mesmo instante, achatando a ordem até o próximo cadastro novo.
+                    ->orderBy('created_at', 'desc')
+                    ->paginate($perPage);
 
-        return response()->json(ClientResource::collection($clients)->response()->getData());
+                // getData(true) — array, não stdClass: config('cache.serializable_classes') é
+                // `false` por padrão (segurança contra injeção de objeto via unserialize), o que
+                // faz QUALQUER objeto vindo do cache do Redis virar __PHP_Incomplete_Class ao
+                // ser lido de volta. Array não sofre essa restrição.
+                return ClientResource::collection($clients)->response()->getData(true);
+            },
+        );
+
+        return response()->json($data);
     }
 
     public function store(ClientRequest $request, RegisterClient $registerClient): JsonResponse

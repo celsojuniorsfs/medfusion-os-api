@@ -124,6 +124,43 @@ por seguir o padrão de Actions.
 - `php artisan event-sourcing:replay` reconstrói todos os read models a partir de
   `stored_events` — útil depois de corrigir um bug de projeção ou adicionar uma coluna nova.
 
+## Cache — listagens em Valkey, invalidadas pelo Projector
+
+Endpoints de listagem (`index`) cacheiam a resposta lida (`Cache::tags([...])->remember(...)`) —
+`GET /clients`, `GET /clients/{id}/equipments`, `GET /orders`, `GET /accessories`. `show`/detalhe
+fica de fora por enquanto.
+
+Servidor real por trás do cache: **Valkey** (fork open-source do Redis mantido pela Linux
+Foundation, mesmo protocolo RESP e mesmos comandos — criado depois da Redis Inc. mudar a licença
+do Redis pra uma não-OSI em 2024). O Laravel não tem um driver "valkey" separado: `CACHE_STORE`
+continua `redis` e as variáveis de ambiente continuam `REDIS_*` — é a nomenclatura do driver do
+framework (amarrada ao protocolo, não ao software), não o nome do que roda de fato. O que muda
+de nome é só a infraestrutura: o serviço `valkey` (antes `redis`) no `docker-compose.yml`.
+
+- **Uma tag por módulo** (`'clients'`, `'equipments'`, `'orders'`, `'accessories'`), não por
+  cliente/recurso individual — uma escrita em qualquer registro do módulo invalida a listagem
+  inteira, mesmo de um cliente não afetado. `Cache::tags()` exige um store que suporte tags
+  (o driver `redis` do Laravel suporta, seja o servidor Redis ou Valkey; `database`/`file` não)
+  — é por isso que `CACHE_STORE=redis` deixou de ser opcional. Granularidade por cliente foi
+  cogitada e descartada: alguns eventos (ex.: `EquipmentUpdated`/`EquipmentRemoved`) nem
+  carregam o `client_id`, e listas por cliente são pequenas o bastante pra um cache miss a mais
+  em clientes não afetados não pesar.
+- **Chave de cache**: a URL completa da requisição (`sha1($request->fullUrl())`) quando o
+  endpoint tem filtros/paginação (Clients, Orders) — cobre todos os parâmetros de uma vez, sem
+  listar cada um manualmente. Equipments (sem filtro, só `client_id` na rota) usa só o id.
+- **Invalidação orientada a evento, não TTL**: cada `Projector` do módulo chama
+  `Cache::tags([...])->flush()` ao final de todo `on*` que ele já implementa — o Projector já é
+  o único lugar que escreve no read model, então vira também o único lugar que invalida o cache
+  dele. O `now()->addHour()` passado a `remember()` é só um limite de segurança, não a
+  estratégia real de expiração.
+- **Sem helper/trait compartilhado entre módulos**: é a mesma meia-dúzia de linhas repetida por
+  módulo — `Cache` é uma facade do framework, não um import de módulo, então usá-la direto em
+  cada um não fere a regra de fronteira acima, e este projeto não tem um "Modules/Shared" nem um
+  `app/` raiz onde colocar algo assim sem inventar um lugar novo só pra isso.
+- `phpunit.xml` roda a suíte com `CACHE_STORE=array` — os testes não dependem de um Valkey de
+  verdade nem de tags (o store `array` ignora `Cache::tags()` silenciosamente, tratando como
+  cache normal).
+
 ## Por que Event Sourcing (e não só "publicar eventos")
 
 Duas coisas em uma: (1) `stored_events` é a fonte da verdade auditável de tudo que aconteceu com

@@ -4,6 +4,7 @@ namespace Modules\Equipments\Presentation\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Modules\Clients\Infrastructure\ReadModels\Client;
 use Modules\Equipments\Application\RegisterEquipment;
 use Modules\Equipments\Application\RemoveEquipment;
@@ -22,9 +23,18 @@ class EquipmentController
     {
         Client::findOrFail($id);
 
-        $equipments = Equipment::where('client_id', $id)->get();
+        // Cache de listagem (ver docs/architecture.md § Cache) — tag única do módulo (não por
+        // cliente): uma escrita em qualquer equipamento invalida a listagem de todos os
+        // clientes, não só do dono do evento. EquipmentUpdated/EquipmentRemoved nem carregam
+        // client_id, então não dava pra invalidar granularmente sem uma consulta extra ao banco
+        // dentro do Projector — listas por cliente são pequenas, o cache miss a mais não pesa.
+        $data = Cache::tags(['equipments'])->remember(
+            "equipments:index:{$id}",
+            now()->addHour(),
+            fn () => EquipmentResource::collection(Equipment::where('client_id', $id)->get())->toArray(request()),
+        );
 
-        return response()->json(['data' => EquipmentResource::collection($equipments)]);
+        return response()->json(['data' => $data]);
     }
 
     public function store(EquipmentRequest $request, string $id, RegisterEquipment $registerEquipment): JsonResponse

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Modules;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Modules\Clients\Domain\ClientAggregate;
@@ -212,5 +213,40 @@ class EquipmentsHttpTest extends TestCase
 
         $response->assertStatus(404);
         $this->assertDatabaseHas('equipments', ['id' => $equipmentId]);
+    }
+
+    public function test_second_identical_listing_is_served_from_cache_without_hitting_the_database(): void
+    {
+        $clientId = $this->aClientId();
+        $this->anEquipmentId($clientId);
+        $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')->getJson("/api/v1/clients/{$clientId}/equipments")->assertOk();
+
+        DB::enableQueryLog();
+        $response = $this->actingAs($user, 'sanctum')->getJson("/api/v1/clients/{$clientId}/equipments");
+        $response->assertOk();
+
+        // Client::findOrFail($id) roda em toda chamada (checa se o cliente ainda existe) — só a
+        // consulta na tabela equipments precisa vir do cache.
+        $queriedEquipments = collect(DB::getQueryLog())->contains(fn ($query) => str_contains($query['query'], 'equipments'));
+        $this->assertFalse($queriedEquipments, 'A segunda chamada idêntica não deveria consultar "equipments" — deveria vir do cache.');
+    }
+
+    public function test_registering_a_new_equipment_invalidates_the_listing_cache(): void
+    {
+        $clientId = $this->aClientId();
+        $this->anEquipmentId($clientId, 'Bisturi', 'SN-1');
+        $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson("/api/v1/clients/{$clientId}/equipments")
+            ->assertJsonCount(1, 'data');
+
+        $this->anEquipmentId($clientId, 'Monitor', 'SN-2');
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson("/api/v1/clients/{$clientId}/equipments")
+            ->assertJsonCount(2, 'data');
     }
 }

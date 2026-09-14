@@ -107,6 +107,28 @@ branch descartável, `git rm -r Modules/<Nome>`, `php artisan test`, registrar o
 `git checkout main && git branch -D <branch>`. Nunca faça isso numa branch com trabalho de
 verdade nem dê push nela.
 
+## Cache (driver `redis`, servidor Valkey): nunca guarde stdClass — e o `array` driver dos testes não pega esse bug
+
+`config/cache.php` traz `'serializable_classes' => false` por padrão (proteção do próprio
+Laravel contra injeção de objeto via `unserialize()` de dado vindo do cache). Isso faz o
+`RedisStore::unserialize()` rodar com `unserialize($value, ['allowed_classes' => false])` —
+**bloqueia TODO objeto**, inclusive `stdClass`: qualquer objeto guardado no cache volta como
+`__PHP_Incomplete_Class` (aparece no JSON como uma chave literal `"__PHP_Incomplete_Class_Name"`
+espalhada pela resposta). Descoberto ao cachear `SomeResource::collection(...)->response()->getData()`
+(que devolve `stdClass`) — a correção é `getData(true)` (array, não objeto; array não sofre essa
+restrição). Doeu para descobrir porque:
+
+- **`phpunit.xml` roda a suíte com `CACHE_STORE=array`, e o `array` driver nunca serializa nada**
+  (fica em memória do próprio processo) — então esse bug de serialização específico do driver
+  `redis` (RESP, seja o servidor Redis ou Valkey) é **invisível pros testes automatizados**, não
+  importa quantas asserções de "cache hit" você escrever. Só aparece testando de verdade contra
+  o Valkey do `docker compose` (curl real, ou `docker compose exec valkey valkey-cli -n 1 keys
+  '*'` pra ver as chaves cruas — o nome do serviço é `valkey`, não `redis`, desde que trocamos o
+  servidor).
+- Sempre que cachear o retorno de um endpoint (`Cache::remember`), garanta que o valor é
+  array/scalar, nunca um objeto (`Resource`, `stdClass`, Eloquent model) — `getData(true)` em vez
+  de `getData()`, ou `->toArray($request)` em vez de devolver a `ResourceCollection` direto.
+
 ## Antes de assumir o estado de uma PR/issue
 
 Não confie em contexto de sessão anterior (resumo de conversa, plano salvo) para saber se uma PR

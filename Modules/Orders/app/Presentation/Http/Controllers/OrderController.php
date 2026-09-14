@@ -197,6 +197,12 @@ class OrderController
             if (! empty($entry['equipment_id'])) {
                 $equipment = Equipment::findOrFail($entry['equipment_id']);
             } else {
+                // api#92: RegisterEquipment passou a receber acessórios estruturados (lista
+                // ligada ao catálogo global), não mais o texto livre que este formulário de OS
+                // ainda aceita — um equipamento novo cadastrado implicitamente por uma OS entra
+                // sem nenhum acessório estruturado no catálogo (o técnico ajusta depois, na tela
+                // de equipamentos do cliente, se precisar). O texto de $entry['accessories']
+                // continua indo pro snapshot desta OS logo abaixo, sem depender do catálogo.
                 $equipment = app(RegisterEquipment::class)(
                     $clientId,
                     $entry['name'],
@@ -204,7 +210,6 @@ class OrderController
                     $entry['model'] ?? null,
                     $entry['serial_number'] ?? null,
                     $entry['asset_tag'] ?? null,
-                    $entry['accessories'] ?? null,
                 );
             }
 
@@ -215,7 +220,10 @@ class OrderController
                 'model' => $equipment->model,
                 'serial_number' => $equipment->serial_number,
                 'asset_tag' => $equipment->asset_tag,
-                'accessories' => $equipment->accessories,
+                // Snapshot próprio desta OS (ver OrderEquipmentAttached) — independente do
+                // catálogo estruturado de acessórios do equipamento (api#92). Vem sempre do que
+                // foi digitado nesta OS, não do que está cadastrado no equipamento.
+                'accessories' => $entry['accessories'] ?? null,
             ];
         }, $equipments);
     }

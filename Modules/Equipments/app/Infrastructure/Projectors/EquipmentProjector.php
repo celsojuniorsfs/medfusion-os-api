@@ -3,10 +3,12 @@
 namespace Modules\Equipments\Infrastructure\Projectors;
 
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Modules\Equipments\Domain\Events\EquipmentRegistered;
 use Modules\Equipments\Domain\Events\EquipmentRemoved;
 use Modules\Equipments\Domain\Events\EquipmentUpdated;
 use Modules\Equipments\Infrastructure\ReadModels\Equipment;
+use Modules\Equipments\Infrastructure\ReadModels\EquipmentAccessory;
 use Spatie\EventSourcing\EventHandlers\Projectors\Projector;
 
 class EquipmentProjector extends Projector
@@ -21,9 +23,9 @@ class EquipmentProjector extends Projector
             'model' => $event->model,
             'serial_number' => $event->serialNumber,
             'asset_tag' => $event->assetTag,
-            'accessories' => $event->accessories,
         ]);
 
+        $this->syncAccessories($event->aggregateRootUuid(), $event->accessories);
         $this->forgetCache();
     }
 
@@ -35,14 +37,17 @@ class EquipmentProjector extends Projector
             'model' => $event->model,
             'serial_number' => $event->serialNumber,
             'asset_tag' => $event->assetTag,
-            'accessories' => $event->accessories,
         ]);
 
+        $this->syncAccessories($event->aggregateRootUuid(), $event->accessories);
         $this->forgetCache();
     }
 
     public function onEquipmentRemoved(EquipmentRemoved $event): void
     {
+        // equipment_accessories some sozinho (cascadeOnDelete na FK, ver migration) — sem
+        // valor de auditoria granular o bastante pra justificar um evento próprio de remoção,
+        // ao contrário de OrderEquipmentsCleared em Orders (que audita cada troca de peça/OS).
         Equipment::whereKey($event->aggregateRootUuid())->delete();
 
         $this->forgetCache();
@@ -57,5 +62,28 @@ class EquipmentProjector extends Projector
     private function forgetCache(): void
     {
         Cache::tags(['equipments'])->flush();
+    }
+
+    /**
+     * Substitui as linhas do pivot por completo a cada register/update — mais simples que
+     * calcular um diff (o que mudou, o que ficou igual) sem nenhum ganho real de auditoria: ao
+     * contrário do PUT de Orders (que audita peça por peça numa OS), aqui a "foto" atual é tudo
+     * que importa. Mesmo espírito do Cleared+reanexa de Orders, só que dentro do mesmo evento em
+     * vez de eventos à parte.
+     *
+     * @param  array<int, array{accessory_id: string, quantity: int}>  $accessories
+     */
+    private function syncAccessories(string $equipmentId, array $accessories): void
+    {
+        EquipmentAccessory::where('equipment_id', $equipmentId)->delete();
+
+        foreach ($accessories as $accessory) {
+            EquipmentAccessory::create([
+                'id' => (string) Str::uuid(),
+                'equipment_id' => $equipmentId,
+                'accessory_id' => $accessory['accessory_id'],
+                'quantity' => $accessory['quantity'],
+            ]);
+        }
     }
 }

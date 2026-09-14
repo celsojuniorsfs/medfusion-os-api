@@ -36,7 +36,7 @@ class EquipmentsAggregateTest extends TestCase
 
         $equipmentUuid = (string) Str::uuid();
         EquipmentAggregate::retrieve($equipmentUuid)
-            ->register($clientUuid, 'Bisturi', 'Marca X', null, 'SN-123', null, null)
+            ->register($clientUuid, 'Bisturi', 'Marca X', null, 'SN-123', null, [])
             ->persist();
 
         $this->assertDatabaseHas('equipments', [

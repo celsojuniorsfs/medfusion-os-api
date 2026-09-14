@@ -6,6 +6,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Modules\Accessories\Domain\AccessoryAggregate;
+use Modules\Accessories\Infrastructure\ReadModels\Accessory;
 use Modules\Clients\Domain\ClientAggregate;
 use Modules\Clients\Domain\Enums\PersonType;
 use Modules\Equipments\Domain\EquipmentAggregate;
@@ -55,10 +57,31 @@ class EquipmentsHttpTest extends TestCase
     {
         $uuid = (string) Str::uuid();
         EquipmentAggregate::retrieve($uuid)
-            ->register($clientId, $name, 'Marca X', null, $serialNumber, null, null)
+            ->register($clientId, $name, 'Marca X', 'Modelo X', $serialNumber, null, [])
             ->persist();
 
         return $uuid;
+    }
+
+    private function anAccessoryId(string $name = 'Cabo de força'): string
+    {
+        $uuid = (string) Str::uuid();
+        AccessoryAggregate::retrieve($uuid)->register($name)->persist();
+
+        return $uuid;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function minimalEquipmentPayload(): array
+    {
+        return [
+            'name' => 'Bisturi',
+            'brand' => 'Marca X',
+            'model' => 'Modelo X',
+            'no_accessories' => true,
+        ];
     }
 
     public function test_guests_cannot_access_equipment_endpoints(): void
@@ -102,34 +125,60 @@ class EquipmentsHttpTest extends TestCase
                 'model' => 'BX-2000',
                 'serial_number' => 'SN-123',
                 'asset_tag' => 'PAT-456',
-                'accessories' => 'Cabo de força, pedal',
+                'no_accessories' => false,
+                'accessories' => [['name' => 'Cabo de força', 'quantity' => 2]],
             ]);
 
         $response->assertCreated();
         $response->assertJsonPath('data.name', 'Bisturi Elétrico');
         $response->assertJsonPath('data.client_id', $clientId);
+        $response->assertJsonCount(1, 'data.accessories');
+        $response->assertJsonPath('data.accessories.0.name', 'Cabo de força');
+        $response->assertJsonPath('data.accessories.0.quantity', 2);
         $this->assertDatabaseHas('equipments', [
             'client_id' => $clientId,
             'name' => 'Bisturi Elétrico',
             'serial_number' => 'SN-123',
         ]);
+        // O acessório digitado na hora entra pro catálogo global (ver api-conventions.md §
+        // Equipamentos) — próximo equipamento já pode reaproveitá-lo por accessory_id.
+        $this->assertDatabaseHas('accessories', ['name' => 'Cabo de força']);
     }
 
-    public function test_creates_an_equipment_with_only_the_required_field(): void
+    public function test_creates_an_equipment_referencing_an_existing_accessory(): void
+    {
+        $clientId = $this->aClientId();
+        $accessoryId = $this->anAccessoryId('Pedal');
+
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->postJson("/api/v1/clients/{$clientId}/equipments", [
+                ...$this->minimalEquipmentPayload(),
+                'no_accessories' => false,
+                'accessories' => [['accessory_id' => $accessoryId, 'quantity' => 1]],
+            ]);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.accessories.0.accessory_id', $accessoryId);
+        $response->assertJsonPath('data.accessories.0.name', 'Pedal');
+        // Reaproveitou o existente — não duplicou no catálogo.
+        $this->assertEquals(1, Accessory::where('name', 'Pedal')->count());
+    }
+
+    public function test_creates_an_equipment_with_no_accessories(): void
     {
         $clientId = $this->aClientId();
 
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
-            ->postJson("/api/v1/clients/{$clientId}/equipments", ['name' => 'Bisturi']);
+            ->postJson("/api/v1/clients/{$clientId}/equipments", $this->minimalEquipmentPayload());
 
         $response->assertCreated();
-        $response->assertJsonPath('data.name', 'Bisturi');
+        $response->assertJsonCount(0, 'data.accessories');
     }
 
     public function test_returns_404_when_creating_an_equipment_for_an_unknown_client(): void
     {
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
-            ->postJson('/api/v1/clients/'.Str::uuid().'/equipments', ['name' => 'Bisturi']);
+            ->postJson('/api/v1/clients/'.Str::uuid().'/equipments', $this->minimalEquipmentPayload());
 
         $response->assertStatus(404);
     }
@@ -142,7 +191,23 @@ class EquipmentsHttpTest extends TestCase
             ->postJson("/api/v1/clients/{$clientId}/equipments", ['brand' => 'Marca X']);
 
         $response->assertStatus(422);
-        $response->assertJsonValidationErrors('name');
+        $response->assertJsonValidationErrors(['name', 'model', 'no_accessories']);
+    }
+
+    public function test_rejects_creation_without_marking_no_accessories_and_without_any_accessory(): void
+    {
+        $clientId = $this->aClientId();
+
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->postJson("/api/v1/clients/{$clientId}/equipments", [
+                'name' => 'Bisturi',
+                'brand' => 'Marca X',
+                'model' => 'Modelo X',
+                'no_accessories' => false,
+            ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('accessories');
     }
 
     public function test_accepts_a_duplicate_serial_number_in_the_same_client(): void
@@ -155,6 +220,7 @@ class EquipmentsHttpTest extends TestCase
 
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
             ->postJson("/api/v1/clients/{$clientId}/equipments", [
+                ...$this->minimalEquipmentPayload(),
                 'name' => 'Bisturi (unidade 2)',
                 'serial_number' => 'SN-123',
             ]);
@@ -169,6 +235,7 @@ class EquipmentsHttpTest extends TestCase
 
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
             ->putJson("/api/v1/clients/{$clientId}/equipments/{$equipmentId}", [
+                ...$this->minimalEquipmentPayload(),
                 'name' => 'Bisturi Elétrico',
                 'brand' => 'Marca Y',
             ]);
@@ -178,6 +245,30 @@ class EquipmentsHttpTest extends TestCase
         $response->assertJsonPath('data.brand', 'Marca Y');
     }
 
+    public function test_updating_an_equipment_replaces_its_accessories(): void
+    {
+        $clientId = $this->aClientId();
+        $equipmentId = $this->anEquipmentId($clientId);
+        $cabo = $this->anAccessoryId('Cabo de força');
+        EquipmentAggregate::retrieve($equipmentId)
+            ->update('Bisturi', 'Marca X', 'Modelo X', 'SN-123', null, [['accessory_id' => $cabo, 'quantity' => 1]])
+            ->persist();
+
+        $pedal = $this->anAccessoryId('Pedal');
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->putJson("/api/v1/clients/{$clientId}/equipments/{$equipmentId}", [
+                ...$this->minimalEquipmentPayload(),
+                'no_accessories' => false,
+                'accessories' => [['accessory_id' => $pedal, 'quantity' => 3]],
+            ]);
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data.accessories');
+        $response->assertJsonPath('data.accessories.0.accessory_id', $pedal);
+        $response->assertJsonPath('data.accessories.0.quantity', 3);
+        $this->assertDatabaseMissing('equipment_accessories', ['equipment_id' => $equipmentId, 'accessory_id' => $cabo]);
+    }
+
     public function test_returns_404_when_updating_an_equipment_from_another_client(): void
     {
         $clientA = $this->aClientId('Hospital São Lucas', '31233218000110');
@@ -185,7 +276,7 @@ class EquipmentsHttpTest extends TestCase
         $equipmentId = $this->anEquipmentId($clientA);
 
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
-            ->putJson("/api/v1/clients/{$clientB}/equipments/{$equipmentId}", ['name' => 'Bisturi']);
+            ->putJson("/api/v1/clients/{$clientB}/equipments/{$equipmentId}", $this->minimalEquipmentPayload());
 
         $response->assertStatus(404);
     }

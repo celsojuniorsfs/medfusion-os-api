@@ -15,6 +15,9 @@ class EquipmentAggregate extends AggregateRoot
 {
     private bool $removed = false;
 
+    /**
+     * @param  array<int, array{accessory_id: string, quantity: int}>  $accessories
+     */
     public function register(
         string $clientId,
         string $name,
@@ -22,7 +25,7 @@ class EquipmentAggregate extends AggregateRoot
         ?string $model,
         ?string $serialNumber,
         ?string $assetTag,
-        ?string $accessories,
+        array $accessories,
     ): self {
         $this->recordThat(new EquipmentRegistered(
             $clientId, $name, $brand, $model, $serialNumber, $assetTag, $accessories,
@@ -31,13 +34,16 @@ class EquipmentAggregate extends AggregateRoot
         return $this;
     }
 
+    /**
+     * @param  array<int, array{accessory_id: string, quantity: int}>  $accessories
+     */
     public function update(
         string $name,
         ?string $brand,
         ?string $model,
         ?string $serialNumber,
         ?string $assetTag,
-        ?string $accessories,
+        array $accessories,
     ): self {
         $this->recordThat(new EquipmentUpdated(
             $name, $brand, $model, $serialNumber, $assetTag, $accessories,

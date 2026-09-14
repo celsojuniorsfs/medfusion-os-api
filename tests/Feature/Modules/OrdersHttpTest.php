@@ -66,7 +66,7 @@ class OrdersHttpTest extends TestCase
     {
         $uuid = (string) Str::uuid();
         EquipmentAggregate::retrieve($uuid)
-            ->register($clientId, $name, 'Marca X', null, 'SN-123', null, null)
+            ->register($clientId, $name, 'Marca X', null, 'SN-123', null, [])
             ->persist();
 
         return $uuid;

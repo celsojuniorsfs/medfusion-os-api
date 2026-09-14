@@ -828,6 +828,10 @@ components:
         serial_number repetido no mesmo cliente não é bloqueado pela API (sem constraint
         unique) — o aviso ao técnico é responsabilidade do frontend, comparando contra a lista
         de equipamentos já carregada do cliente antes de enviar o cadastro.
+
+        Atualizado em api#92: name/brand/model passam a ser obrigatórios (antes só name), e
+        accessories deixa de ser texto livre — vira uma lista de itens do catálogo global de
+        acessórios (Accessory), cada um com sua quantidade.
       properties:
         id: { type: string, format: uuid }
         client_id: { type: string, format: uuid }
@@ -836,25 +840,53 @@ components:
             type: string,
             description: "Nome/tipo do equipamento, ex.: Bisturi",
           }
-        brand: { type: ["string", "null"], description: "Marca" }
-        model: { type: ["string", "null"], description: "Modelo" }
+        brand: { type: string, description: "Marca" }
+        model: { type: string, description: "Modelo" }
         serial_number:
           { type: ["string", "null"], description: "Número de série" }
         asset_tag: { type: ["string", "null"], description: "Patrimônio" }
-        accessories: { type: ["string", "null"], description: "Acessórios" }
+        accessories:
+          type: array
+          items: { $ref: "#/components/schemas/EquipmentAccessory" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
+    EquipmentAccessory:
+      type: object
+      description: Um item do catálogo global de acessórios (Accessory), com a quantidade usada neste equipamento.
+      properties:
+        accessory_id: { type: string, format: uuid }
+        name: { type: string }
+        quantity: { type: integer, minimum: 1 }
+
     EquipmentInput:
       type: object
-      required: [name]
+      required: [name, brand, model, no_accessories]
       properties:
         name: { type: string }
-        brand: { type: ["string", "null"] }
-        model: { type: ["string", "null"] }
+        brand: { type: string }
+        model: { type: string }
         serial_number: { type: ["string", "null"] }
         asset_tag: { type: ["string", "null"] }
-        accessories: { type: ["string", "null"] }
+        no_accessories:
+          type: boolean
+          description: >
+            Marcação explícita de "sem acessórios" (api#92) — resolve a ambiguidade entre
+            "esqueceram de preencher" e "realmente não tem nenhum". Obrigatório; quando `false`,
+            `accessories` precisa ter ao menos 1 item.
+        accessories:
+          type: array
+          description: >
+            Cada item é `accessory_id` (reaproveita um acessório já cadastrado) OU `name`
+            (cadastra um novo no catálogo global na hora) — mesmo padrão oneOf de
+            OrderEquipmentInput.
+          items:
+            type: object
+            required: [quantity]
+            properties:
+              accessory_id: { type: string, format: uuid }
+              name: { type: string }
+              quantity: { type: integer, minimum: 1 }
 
     Accessory:
       type: object

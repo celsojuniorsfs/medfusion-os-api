@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Modules\Clients\Infrastructure\ReadModels\Client;
 
 /**
@@ -14,7 +15,9 @@ use Modules\Clients\Infrastructure\ReadModels\Client;
  * EquipmentAggregate.
  */
 // "id" entra no fillable porque o EquipmentProjector cria a linha com o mesmo uuid do agregado.
-#[Fillable(['id', 'client_id', 'name', 'brand', 'model', 'serial_number', 'asset_tag', 'accessories'])]
+// "accessories" saiu daqui (api#92) — não é mais coluna própria, virou o relacionamento
+// accessories() abaixo, ligado ao pivot equipment_accessories.
+#[Fillable(['id', 'client_id', 'name', 'brand', 'model', 'serial_number', 'asset_tag'])]
 class Equipment extends Model
 {
     use HasFactory, HasUuids;
@@ -33,5 +36,13 @@ class Equipment extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    /**
+     * @return HasMany<EquipmentAccessory, $this>
+     */
+    public function accessories(): HasMany
+    {
+        return $this->hasMany(EquipmentAccessory::class);
     }
 }

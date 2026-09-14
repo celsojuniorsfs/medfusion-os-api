@@ -68,15 +68,18 @@ este é o grafo real de quem lê quem, confirmado em 13/09/2026 apagando cada m�
 vendo o que quebrava:
 
 ```
-Identity   ← lido por: todo mundo (auth:sanctum) e por Orders (Order::user())
-Clients    ← lido por: Equipments (Client::findOrFail no controller) e Orders
-             (Order::where('client_id', ...), Client::orders() já foi removida por não ter uso)
-Equipments ← lido por: Orders (OrderEquipment, e uma FK de verdade no banco)
-Orders     ← não é lido por nenhum outro módulo — fica no topo da pilha
+Identity    ← lido por: todo mundo (auth:sanctum) e por Orders (Order::user())
+Clients     ← lido por: Equipments (Client::findOrFail no controller) e Orders
+              (Order::where('client_id', ...), Client::orders() já foi removida por não ter uso)
+Accessories ← lido por: Equipments (RegisterAccessory chamado da Presentation pra cadastrar um
+              acessório novo digitado na hora, ver EquipmentController::resolveAccessories; FK de
+              verdade no banco em equipment_accessories.accessory_id, api#92)
+Equipments  ← lido por: Orders (OrderEquipment, e uma FK de verdade no banco)
+Orders      ← não é lido por nenhum outro módulo — fica no topo da pilha
 ```
 
-`Clients` e `Identity` nunca devem importar nada de `Equipments`/`Orders`/um do outro — são a
-base do grafo. Se um dia um desses dois precisar importar algo de um módulo "de cima", pare e
+`Clients`, `Identity` e `Accessories` nunca devem importar nada de `Equipments`/`Orders`/um dos
+outros — são a base do grafo. Se um dia um desses precisar importar algo de um módulo "de cima", pare e
 reconsidere — é sinal de que a dependência foi modelada ao contrário.
 
 Três coisas que a auditoria descobriu e valem a pena lembrar ao mexer nesse grafo (ex.: ao

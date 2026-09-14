@@ -5,6 +5,8 @@ namespace Modules\Equipments\Presentation\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Modules\Accessories\Application\RegisterAccessory;
 use Modules\Clients\Infrastructure\ReadModels\Client;
 use Modules\Equipments\Application\RegisterEquipment;
 use Modules\Equipments\Application\RemoveEquipment;
@@ -31,7 +33,9 @@ class EquipmentController
         $data = Cache::tags(['equipments'])->remember(
             "equipments:index:{$id}",
             now()->addHour(),
-            fn () => EquipmentResource::collection(Equipment::where('client_id', $id)->get())->toArray(request()),
+            fn () => EquipmentResource::collection(
+                Equipment::with('accessories.accessory')->where('client_id', $id)->get(),
+            )->toArray(request()),
         );
 
         return response()->json(['data' => $data]);
@@ -43,17 +47,19 @@ class EquipmentController
 
         $data = $request->validated();
 
-        $equipment = $registerEquipment(
-            $id,
-            $data['name'],
-            $data['brand'] ?? null,
-            $data['model'] ?? null,
-            $data['serial_number'] ?? null,
-            $data['asset_tag'] ?? null,
-            $data['accessories'] ?? null,
-        );
+        $equipment = DB::transaction(function () use ($id, $data, $registerEquipment) {
+            return $registerEquipment(
+                $id,
+                $data['name'],
+                $data['brand'],
+                $data['model'],
+                $data['serial_number'] ?? null,
+                $data['asset_tag'] ?? null,
+                $this->resolveAccessories($data),
+            );
+        });
 
-        return response()->json(['data' => new EquipmentResource($equipment)], 201);
+        return response()->json(['data' => new EquipmentResource($equipment->load('accessories.accessory'))], 201);
     }
 
     /**
@@ -66,17 +72,19 @@ class EquipmentController
 
         $data = $request->validated();
 
-        $equipment = $updateEquipment(
-            $equipmentId,
-            $data['name'],
-            $data['brand'] ?? null,
-            $data['model'] ?? null,
-            $data['serial_number'] ?? null,
-            $data['asset_tag'] ?? null,
-            $data['accessories'] ?? null,
-        );
+        $equipment = DB::transaction(function () use ($equipmentId, $data, $updateEquipment) {
+            return $updateEquipment(
+                $equipmentId,
+                $data['name'],
+                $data['brand'],
+                $data['model'],
+                $data['serial_number'] ?? null,
+                $data['asset_tag'] ?? null,
+                $this->resolveAccessories($data),
+            );
+        });
 
-        return response()->json(['data' => new EquipmentResource($equipment)]);
+        return response()->json(['data' => new EquipmentResource($equipment->load('accessories.accessory'))]);
     }
 
     public function destroy(string $id, string $equipmentId, RemoveEquipment $removeEquipment): Response
@@ -86,5 +94,27 @@ class EquipmentController
         $removeEquipment($equipmentId);
 
         return response()->noContent();
+    }
+
+    /**
+     * Resolve cada entrada de `accessories` — `accessory_id` existente ou `name` novo (cadastra
+     * no catálogo global na hora, mesma composição entre módulos via Presentation que
+     * OrderController::resolveEquipments já faz pra equipamento). Chamado sempre dentro de uma
+     * DB::transaction (ver store/update): se algo falhar no meio, nenhum acessório novo fica
+     * cadastrado pela metade.
+     *
+     * @param  array<string, mixed>  $data  validated() do EquipmentRequest
+     * @return array<int, array{accessory_id: string, quantity: int}>
+     */
+    private function resolveAccessories(array $data): array
+    {
+        return array_map(function (array $entry) {
+            $accessoryId = $entry['accessory_id'] ?? app(RegisterAccessory::class)($entry['name'])->id;
+
+            return [
+                'accessory_id' => $accessoryId,
+                'quantity' => $entry['quantity'],
+            ];
+        }, $data['accessories'] ?? []);
     }
 }

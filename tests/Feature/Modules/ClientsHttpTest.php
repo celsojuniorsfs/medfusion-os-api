@@ -381,7 +381,7 @@ class ClientsHttpTest extends TestCase
         $clientId = $this->aClientId();
         $equipmentId = (string) Str::uuid();
         EquipmentAggregate::retrieve($equipmentId)
-            ->register($clientId, 'Bisturi', null, null, null, null, null)
+            ->register($clientId, 'Bisturi', null, null, null, null, [])
             ->persist();
 
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')

@@ -41,14 +41,14 @@ PHP/Composer instalados na máquina, só Docker.
 cp .env.example .env
 # Preencher ADMIN_EMAIL / ADMIN_PASSWORD no .env antes do seed abaixo
 
-docker compose up -d                                    # laravel.test (porta 8000) + mysql
-docker compose exec laravel.test composer install
-docker compose exec laravel.test php artisan key:generate
-docker compose exec laravel.test php artisan migrate --seed
+docker compose up -d                                    # app (porta 8000) + mysql
+docker compose exec app composer install
+docker compose exec app php artisan key:generate
+docker compose exec app php artisan migrate --seed
 ```
 
 A partir daqui, rode qualquer comando artisan/composer/pint prefixado com
-`docker compose exec laravel.test` (ex.: `docker compose exec laravel.test php artisan test`).
+`docker compose exec app` (ex.: `docker compose exec app php artisan test`).
 
 Mailpit (captura e-mails, ainda sem uso — feature de notificação não implementada), um worker de
 fila dedicado e o Adminer (UI do MySQL) ficam atrás de um profile, pra não pesar na máquina sem
@@ -70,7 +70,7 @@ Depois de corrigir um bug de projeção (ou adicionar uma coluna a um read model
 dados a partir dos eventos gravados:
 
 ```bash
-docker compose exec laravel.test php artisan event-sourcing:replay
+docker compose exec app php artisan event-sourcing:replay
 ```
 
 Dashboard de monitoramento ([Laravel Pulse](https://laravel.com/docs/pulse)) em

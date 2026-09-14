@@ -8,9 +8,11 @@
 ## Local
 
 - **Backend inteiro em Docker** ([Laravel Sail](https://laravel.com/docs/sail), decidido em
-  10/09/2026): `docker compose up -d` sobe `laravel.test` (`http://localhost:8000`) e `mysql`
+  10/09/2026): `docker compose up -d` sobe `app` (`http://localhost:8000`) e `mysql`
   (MySQL 8.4, mesma major da produção — para não caçar bugs de dialeto SQL depois). Comandos
-  artisan/composer rodam via `docker compose exec laravel.test ...` (ver README).
+  artisan/composer rodam via `docker compose exec app ...` (ver README). Serviço renomeado de
+  `laravel.test` (nome padrão do Sail) para `app` em 14/09/2026 — só o nome no Compose muda, a
+  imagem continua `sail-8.4/app`.
 - Mailpit, um worker de fila dedicado e o Adminer ficam atrás do profile `extra`
   (`docker compose --profile extra up -d`) — sem uso real ainda (fila e e-mail são só
   documentados, a notificação automática da OS não está implementada), então não rodam por

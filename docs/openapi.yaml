@@ -38,6 +38,10 @@ tags:
     description: Cadastro de clientes
   - name: equipments
     description: Catálogo de equipamentos por cliente, reaproveitável entre OS's
+  - name: accessories
+    description: >
+      Catálogo global de acessórios (api#92) — cadastrado uma vez, reaproveitado por equipamentos
+      de qualquer cliente
   - name: orders
     description: Ordens de Serviço
 
@@ -299,6 +303,55 @@ paths:
         "204": { description: Removido }
         "404":
           $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /accessories:
+    get:
+      tags: [accessories]
+      summary: Lista o catálogo global de acessórios, ordenado por nome
+      description: >
+        Sem paginação nem busca no servidor (mesma decisão já tomada pro catálogo de
+        equipamentos do cliente): a lista inteira volta de uma vez, busca é filtro client-side
+        no seletor do front.
+      operationId: listAccessories
+      responses:
+        "200":
+          description: Lista de acessórios
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Accessory" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [accessories]
+      summary: Cadastra um acessório novo no catálogo global
+      description: >
+        Também é chamado implicitamente por POST/PUT nos equipamentos quando um acessório é
+        digitado pela primeira vez — fica salvo no catálogo global para os próximos
+        equipamentos (api#92).
+      operationId: createAccessory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccessoryInput" }
+      responses:
+        "201":
+          description: Acessório cadastrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Accessory" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -757,6 +810,26 @@ components:
         serial_number: { type: ["string", "null"] }
         asset_tag: { type: ["string", "null"] }
         accessories: { type: ["string", "null"] }
+
+    Accessory:
+      type: object
+      description: >
+        Catálogo global de acessórios (api#92) — cadastrado uma vez, reaproveitado por
+        equipamentos de qualquer cliente. Nome repetido não é bloqueado pela API (sem constraint
+        unique), mesma decisão já tomada pro serial_number de Equipment — o seletor do frontend
+        evita duplicata na prática oferecendo os itens já cadastrados antes de deixar digitar um
+        novo.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, description: "Nome do acessório, ex.: Cabo de força" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    AccessoryInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
 
     OrderEquipmentInput:
       description: >

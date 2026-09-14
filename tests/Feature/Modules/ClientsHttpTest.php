@@ -3,6 +3,7 @@
 namespace Tests\Feature\Modules;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Modules\Clients\Domain\ClientAggregate;
@@ -410,5 +411,34 @@ class ClientsHttpTest extends TestCase
         $response = $this->actingAs($user, 'sanctum')->getJson('/api/v1/clients?per_page=0');
         $response->assertOk();
         $response->assertJsonPath('meta.per_page', 1);
+    }
+
+    public function test_second_identical_listing_is_served_from_cache_without_hitting_the_database(): void
+    {
+        $this->aClientId('Hospital São Lucas', '31233218000110');
+        $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')->getJson('/api/v1/clients')->assertOk();
+
+        DB::enableQueryLog();
+        $response = $this->actingAs($user, 'sanctum')->getJson('/api/v1/clients');
+        $response->assertOk();
+        // Confere o conteúdo, não só o status — um valor cacheado errado (ex.: objeto vindo do
+        // Redis com allowed_classes bloqueado, virando __PHP_Incomplete_Class) ainda devolve 200.
+        $response->assertJsonPath('data.0.name', 'Hospital São Lucas');
+
+        $this->assertEmpty(DB::getQueryLog(), 'A segunda chamada idêntica não deveria consultar o banco — deveria vir do cache.');
+    }
+
+    public function test_registering_a_new_client_invalidates_the_listing_cache(): void
+    {
+        $this->aClientId('Hospital São Lucas', '31233218000110');
+        $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')->getJson('/api/v1/clients')->assertJsonCount(1, 'data');
+
+        $this->aClientId('Clínica Vida', '11222333000181');
+
+        $this->actingAs($user, 'sanctum')->getJson('/api/v1/clients')->assertJsonCount(2, 'data');
     }
 }

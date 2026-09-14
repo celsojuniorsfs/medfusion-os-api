@@ -4,6 +4,7 @@ namespace Modules\Orders\Presentation\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Modules\Equipments\Application\RegisterEquipment;
@@ -30,22 +31,36 @@ class OrderController
      */
     public function index(Request $request): JsonResponse
     {
-        $perPage = min(100, max(1, (int) $request->query('per_page', 15)));
+        // Cache de listagem (ver docs/architecture.md § Cache) — chave é a própria URL completa,
+        // cobrindo os 6 filtros possíveis (client_id, equipment_id, status, date_from, date_to,
+        // page/per_page) sem listar cada um manualmente. Invalidado por inteiro a cada evento do
+        // módulo (Projector de Orders), não por TTL.
+        $data = Cache::tags(['orders'])->remember(
+            'orders:index:'.sha1($request->fullUrl()),
+            now()->addHour(),
+            function () use ($request) {
+                $perPage = min(100, max(1, (int) $request->query('per_page', 15)));
 
-        $orders = Order::query()
-            ->with(self::WITH)
-            ->when($request->query('client_id'), fn ($q, $clientId) => $q->where('client_id', $clientId))
-            ->when(
-                $request->query('equipment_id'),
-                fn ($q, $equipmentId) => $q->whereHas('equipments', fn ($eq) => $eq->where('equipment_id', $equipmentId)),
-            )
-            ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
-            ->when($request->query('date_from'), fn ($q, $date) => $q->whereDate('date', '>=', $date))
-            ->when($request->query('date_to'), fn ($q, $date) => $q->whereDate('date', '<=', $date))
-            ->orderBy('date', 'desc')
-            ->paginate($perPage);
+                $orders = Order::query()
+                    ->with(self::WITH)
+                    ->when($request->query('client_id'), fn ($q, $clientId) => $q->where('client_id', $clientId))
+                    ->when(
+                        $request->query('equipment_id'),
+                        fn ($q, $equipmentId) => $q->whereHas('equipments', fn ($eq) => $eq->where('equipment_id', $equipmentId)),
+                    )
+                    ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
+                    ->when($request->query('date_from'), fn ($q, $date) => $q->whereDate('date', '>=', $date))
+                    ->when($request->query('date_to'), fn ($q, $date) => $q->whereDate('date', '<=', $date))
+                    ->orderBy('date', 'desc')
+                    ->paginate($perPage);
 
-        return response()->json(OrderResource::collection($orders)->response()->getData());
+                // getData(true) — array, não stdClass: ver o mesmo comentário em
+                // ClientController::index.
+                return OrderResource::collection($orders)->response()->getData(true);
+            },
+        );
+
+        return response()->json($data);
     }
 
     /**

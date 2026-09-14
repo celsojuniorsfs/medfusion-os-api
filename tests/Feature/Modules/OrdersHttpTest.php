@@ -3,6 +3,7 @@
 namespace Tests\Feature\Modules;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Modules\Clients\Domain\ClientAggregate;
@@ -457,5 +458,35 @@ class OrdersHttpTest extends TestCase
         $this->actingAs($this->authenticatedUser(), 'sanctum')
             ->patchJson('/api/v1/orders/'.Str::uuid().'/status', ['status' => 'in_analysis'])
             ->assertStatus(404);
+    }
+
+    public function test_second_identical_listing_is_served_from_cache_without_hitting_the_database(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId));
+
+        $this->actingAs($user, 'sanctum')->getJson('/api/v1/orders')->assertOk();
+
+        DB::enableQueryLog();
+        $response = $this->actingAs($user, 'sanctum')->getJson('/api/v1/orders');
+        $response->assertOk();
+        // Confere o conteúdo, não só o status — ver o mesmo comentário em ClientsHttpTest.
+        $response->assertJsonPath('data.0.client.id', $clientId);
+
+        $this->assertEmpty(DB::getQueryLog(), 'A segunda chamada idêntica não deveria consultar o banco — deveria vir do cache.');
+    }
+
+    public function test_opening_a_new_order_invalidates_the_listing_cache(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId, 1337));
+
+        $this->actingAs($user, 'sanctum')->getJson('/api/v1/orders')->assertJsonCount(1, 'data');
+
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId, 1338));
+
+        $this->actingAs($user, 'sanctum')->getJson('/api/v1/orders')->assertJsonCount(2, 'data');
     }
 }

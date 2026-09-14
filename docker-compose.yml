@@ -25,6 +25,7 @@ services:
             - sail
         depends_on:
             - mysql
+            - redis
     mysql:
         image: 'mysql:8.4'
         restart: unless-stopped
@@ -55,6 +56,24 @@ services:
             interval: 5s
             timeout: 5s
             retries: 20
+    # Cache de leitura (listagens) — ver docs/architecture.md § Cache. Fora do profile "extra":
+    # ao contrário de mailpit/queue/adminer, isto já tem uso real (CACHE_STORE=redis).
+    redis:
+        image: 'redis:alpine'
+        restart: unless-stopped
+        ports:
+            - '${FORWARD_REDIS_PORT:-6379}:6379'
+        volumes:
+            - 'sail-redis:/data'
+        networks:
+            - sail
+        healthcheck:
+            test:
+                - CMD
+                - redis-cli
+                - ping
+            retries: 3
+            timeout: 5s
 
     # Os três serviços abaixo não têm uso real no código ainda (fila e e-mail são só
     # documentados hoje — ver docs/api-conventions.md § Notificação automática, ainda não
@@ -103,4 +122,6 @@ networks:
         driver: bridge
 volumes:
     sail-mysql:
+        driver: local
+    sail-redis:
         driver: local

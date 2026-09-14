@@ -1,5 +1,5 @@
 services:
-    laravel.test:
+    app:
         build:
             context: ./vendor/laravel/sail/runtimes/8.4
             dockerfile: Dockerfile
@@ -31,8 +31,8 @@ services:
         ports:
             # FORWARD_DB_PORT é só o mapeamento externo (host → container), pra uma ferramenta
             # de fora do Docker acessar o MySQL (ex.: TablePlus). DB_PORT continua 3306 no .env —
-            # é a porta que o container laravel.test usa pra falar com "mysql" DENTRO da rede do
-            # Compose, que nunca passa pela porta publicada aqui.
+            # é a porta que o container app usa pra falar com "mysql" DENTRO da rede do Compose,
+            # que nunca passa pela porta publicada aqui.
             - '${FORWARD_DB_PORT:-3306}:3306'
         environment:
             MYSQL_ROOT_PASSWORD: '${DB_PASSWORD}'

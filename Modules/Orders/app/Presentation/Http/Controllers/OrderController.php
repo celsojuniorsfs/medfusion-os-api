@@ -5,12 +5,16 @@ namespace Modules\Orders\Presentation\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Modules\Equipments\Application\RegisterEquipment;
 use Modules\Equipments\Infrastructure\ReadModels\Equipment;
 use Modules\Orders\Application\AddOrderItem;
 use Modules\Orders\Application\AttachEquipmentToOrder;
+use Modules\Orders\Application\ChangeOrderStatus;
 use Modules\Orders\Application\OpenOrder;
 use Modules\Orders\Application\OrderService;
+use Modules\Orders\Application\UpdateOrder;
+use Modules\Orders\Domain\Enums\OrderStatus;
 use Modules\Orders\Infrastructure\ReadModels\Order;
 use Modules\Orders\Presentation\Http\Requests\OrderRequest;
 use Modules\Orders\Presentation\Http\Resources\OrderResource;
@@ -91,6 +95,67 @@ class OrderController
     public function show(string $id): JsonResponse
     {
         return response()->json(['data' => new OrderResource(Order::with(self::WITH)->findOrFail($id))]);
+    }
+
+    /**
+     * PUT /orders/{id} — substitui equipamentos e peças por completo (ver
+     * OrderAggregate::clearEquipments()/clearItems()). Confere se a OS existe antes de chamar
+     * UpdateOrder: OrderAggregate::retrieve() de um uuid desconhecido cria um agregado novo em
+     * branco silenciosamente (comportamento do spatie) em vez de falhar — sem este findOrFail(),
+     * um PUT pra um id inexistente geraria um stored_events órfão, sem nenhuma linha em `orders`.
+     */
+    public function update(OrderRequest $request, string $id, OrderService $orderService, UpdateOrder $updateOrder): JsonResponse
+    {
+        Order::findOrFail($id);
+
+        $data = $request->validated();
+
+        $order = DB::transaction(function () use ($data, $id, $updateOrder) {
+            $equipments = $this->resolveEquipments($data['equipments'], $data['client_id']);
+
+            $updateOrder(
+                $id,
+                $data['number'],
+                $data['date'],
+                $data['client_id'],
+                $data['picked_up'] ?? false,
+                $data['warranty'] ?? false,
+                $data['technical_training'] ?? false,
+                $data['on_site_quote'] ?? false,
+                $data['rental'] ?? false,
+                $data['reported_defect'] ?? null,
+                $data['maintenance_plan'] ?? null,
+                $data['notes'] ?? null,
+                $data['payment_method'] ?? null,
+                $data['warranty_period'] ?? null,
+                $data['proposal_validity'] ?? null,
+                $data['labor_cost'] ?? null,
+            );
+
+            $this->attachEquipmentsAndItems($id, $equipments, $data['items'] ?? []);
+
+            return Order::findOrFail($id);
+        });
+
+        return response()->json(['data' => new OrderResource($order->fresh(self::WITH))]);
+    }
+
+    /**
+     * PATCH /orders/{id}/status — só o campo `status`, sem FormRequest à parte (mesmo padrão já
+     * usado pra endpoints pequenos deste repo). InvalidOrderStatusTransition define o próprio
+     * render() (422 no formato ValidationErrorBody) — nada a capturar aqui.
+     */
+    public function updateStatus(Request $request, string $id, ChangeOrderStatus $changeOrderStatus): JsonResponse
+    {
+        Order::findOrFail($id);
+
+        $data = $request->validate([
+            'status' => ['required', Rule::enum(OrderStatus::class)],
+        ]);
+
+        $order = $changeOrderStatus($id, OrderStatus::from($data['status']));
+
+        return response()->json(['data' => new OrderResource($order->fresh(self::WITH))]);
     }
 
     /**

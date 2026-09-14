@@ -18,14 +18,14 @@ class OrdersAggregateTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function aClientId(): string
+    private function aClientId(string $taxId = '31233218000110'): string
     {
         $uuid = (string) Str::uuid();
         ClientAggregate::retrieve($uuid)
             ->register(
                 personType: PersonType::Company,
                 name: 'Hospital São Lucas',
-                taxId: '31233218000110',
+                taxId: $taxId,
                 tradeName: null,
                 stateRegistration: null,
                 requester: null,
@@ -99,5 +99,49 @@ class OrdersAggregateTest extends TestCase
 
         // open → completed não está na tabela de transições (api-conventions.md § Status da OS).
         OrderAggregate::retrieve($orderUuid)->changeStatus(OrderStatus::Completed);
+    }
+
+    public function test_update_changes_header_fields_and_recalculates_total(): void
+    {
+        $orderUuid = (string) Str::uuid();
+        OrderAggregate::retrieve($orderUuid)
+            ->open(1340, '2026-09-08', $this->aClientId(), $this->aUserId(), false, false, false, false, false, null, null, null, null, null, null, 100.0)
+            ->persist();
+
+        $newClientId = $this->aClientId('11222333000181');
+        OrderAggregate::retrieve($orderUuid)
+            ->update(1340, '2026-09-10', $newClientId, true, false, false, false, false, null, null, 'Nota nova', null, null, null, 200.0)
+            ->persist();
+
+        $order = Order::findOrFail($orderUuid);
+        $this->assertSame('2026-09-10', $order->date->toDateString());
+        $this->assertSame($newClientId, $order->client_id);
+        $this->assertTrue((bool) $order->picked_up);
+        $this->assertSame('Nota nova', $order->notes);
+        // Sem itens ainda — total é só o labor_cost novo.
+        $this->assertEqualsWithDelta(200.0, (float) $order->total, 0.001);
+    }
+
+    public function test_clear_equipments_and_items_removes_them_and_resets_the_total(): void
+    {
+        $orderUuid = (string) Str::uuid();
+        OrderAggregate::retrieve($orderUuid)
+            ->open(1341, '2026-09-08', $this->aClientId(), $this->aUserId(), false, false, false, false, false, null, null, null, null, null, null, 50.0)
+            ->attachEquipment(null, 'Bisturi', null, null, null, null, null)
+            ->addItem(2, 'Peça', 25.0)
+            ->persist();
+
+        $beforeClear = Order::with(['equipments', 'items'])->findOrFail($orderUuid);
+        $this->assertSame(1, $beforeClear->equipments->count());
+        $this->assertSame(1, $beforeClear->items->count());
+        $this->assertEqualsWithDelta(100.0, (float) $beforeClear->total, 0.001); // 50 + 2*25
+
+        OrderAggregate::retrieve($orderUuid)->clearEquipments()->clearItems()->persist();
+
+        $afterClear = Order::with(['equipments', 'items'])->findOrFail($orderUuid);
+        $this->assertSame(0, $afterClear->equipments->count());
+        $this->assertSame(0, $afterClear->items->count());
+        // Volta a ser só o labor_cost (50) — sem itens pra somar.
+        $this->assertEqualsWithDelta(50.0, (float) $afterClear->total, 0.001);
     }
 }

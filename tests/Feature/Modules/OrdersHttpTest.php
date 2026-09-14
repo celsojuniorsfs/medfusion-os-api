@@ -11,6 +11,8 @@ use Modules\Equipments\Domain\EquipmentAggregate;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
 use Modules\Orders\Application\OpenOrder;
+use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
+use Modules\Orders\Domain\Events\OrderItemsCleared;
 use Tests\TestCase;
 
 class OrdersHttpTest extends TestCase
@@ -341,5 +343,119 @@ class OrdersHttpTest extends TestCase
             ->getJson('/api/v1/orders?date_from=2026-09-01&date_to=2026-09-30');
         $byDate->assertJsonCount(1, 'data');
         $byDate->assertJsonPath('data.0.number', 1338);
+    }
+
+    public function test_updates_an_order_replacing_equipments_and_items(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $oldEquipmentId = $this->anEquipmentId($clientId, 'Bisturi Antigo');
+
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            ...$this->minimalOrderPayload($clientId),
+            'equipments' => [['equipment_id' => $oldEquipmentId]],
+            'items' => [['quantity' => 1, 'description' => 'Peça antiga', 'unit_price' => 10.0]],
+        ])->json('data');
+
+        $newEquipmentId = $this->anEquipmentId($clientId, 'Monitor Novo');
+        $response = $this->actingAs($user, 'sanctum')->putJson("/api/v1/orders/{$created['id']}", [
+            'number' => 1337,
+            'date' => '2026-09-13',
+            'client_id' => $clientId,
+            'labor_cost' => 200.0,
+            'equipments' => [['equipment_id' => $newEquipmentId]],
+            'items' => [['quantity' => 3, 'description' => 'Peça nova', 'unit_price' => 10.0]],
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data.equipments');
+        $response->assertJsonPath('data.equipments.0.equipment_id', $newEquipmentId);
+        $response->assertJsonCount(1, 'data.items');
+        $response->assertJsonPath('data.items.0.description', 'Peça nova');
+        // total = 200 (labor_cost novo) + 3 * 10 (item novo) = 230 — o antigo não entra mais.
+        $response->assertJsonPath('data.total', '230.00');
+
+        $this->assertDatabaseMissing('order_equipments', ['order_id' => $created['id'], 'equipment_id' => $oldEquipmentId]);
+        $this->assertDatabaseHas('stored_events', ['aggregate_uuid' => $created['id'], 'event_class' => OrderEquipmentsCleared::class]);
+        $this->assertDatabaseHas('stored_events', ['aggregate_uuid' => $created['id'], 'event_class' => OrderItemsCleared::class]);
+    }
+
+    public function test_updating_an_order_keeping_its_own_number_is_not_a_duplicate(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $created = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId, 1337))
+            ->json('data');
+
+        $response = $this->actingAs($user, 'sanctum')->putJson("/api/v1/orders/{$created['id']}", [
+            ...$this->minimalOrderPayload($clientId, 1337),
+            'notes' => 'Observação atualizada',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('data.notes', 'Observação atualizada');
+    }
+
+    public function test_rejects_updating_an_order_with_a_number_used_by_another_order(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $this->openOrder(1337, $clientId, $user->id);
+        $created = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId, 1338))
+            ->json('data');
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->putJson("/api/v1/orders/{$created['id']}", $this->minimalOrderPayload($clientId, 1337));
+
+        $response->assertStatus(409);
+    }
+
+    public function test_returns_404_when_updating_an_unknown_order(): void
+    {
+        $clientId = $this->aClientId();
+
+        $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->putJson('/api/v1/orders/'.Str::uuid(), $this->minimalOrderPayload($clientId))
+            ->assertStatus(404);
+    }
+
+    public function test_changes_the_order_status(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $created = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId))
+            ->json('data');
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->patchJson("/api/v1/orders/{$created['id']}/status", ['status' => 'in_analysis']);
+
+        $response->assertOk();
+        $response->assertJsonPath('data.status', 'in_analysis');
+    }
+
+    public function test_rejects_an_invalid_status_transition(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $created = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId))
+            ->json('data');
+
+        // open → completed não está na tabela de transições (api-conventions.md § Status da OS).
+        $response = $this->actingAs($user, 'sanctum')
+            ->patchJson("/api/v1/orders/{$created['id']}/status", ['status' => 'completed']);
+
+        $response->assertStatus(422);
+        $response->assertJsonStructure(['message', 'errors' => ['status']]);
+    }
+
+    public function test_returns_404_when_changing_the_status_of_an_unknown_order(): void
+    {
+        $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->patchJson('/api/v1/orders/'.Str::uuid().'/status', ['status' => 'in_analysis'])
+            ->assertStatus(404);
     }
 }

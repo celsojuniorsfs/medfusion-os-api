@@ -129,8 +129,19 @@ restrição). Doeu para descobrir porque:
   '*'` pra ver as chaves cruas — o nome do serviço é `valkey`, não `redis`, desde que trocamos o
   servidor).
 - Sempre que cachear o retorno de um endpoint (`Cache::remember`), garanta que o valor é
-  array/scalar, nunca um objeto (`Resource`, `stdClass`, Eloquent model) — `getData(true)` em vez
-  de `getData()`, ou `->toArray($request)` em vez de devolver a `ResourceCollection` direto.
+  array/scalar, nunca um objeto (`Resource`, `stdClass`, Eloquent model, `Collection`) — em
+  QUALQUER nível de aninhamento, não só no topo.
+- **`->toArray($request)` sozinho não é garantia — só resolve o nível de fora.** Achado num
+  segundo caso (15/09/2026, `EquipmentController::index`): o `toArray()` de
+  `EquipmentResource` fazia `$this->accessories->map(fn ($item) => [...])` — `->map()` numa
+  `Collection` devolve OUTRA `Collection`, não um array puro, e isso ficava aninhado dentro do
+  array que o Resource devolve. `ResourceCollection::toArray()` resolve a lista de recursos em
+  array, mas não desce recursivamente dentro do `toArray()` de cada um pra converter objetos
+  aninhados. Resultado: o objeto sobrevivia escondido um nível abaixo, guardado assim no cache,
+  e voltava quebrado (ver bug acima) sem nenhum erro na hora de salvar — só ao reler depois.
+  **Prefira sempre `->response()->getData(true)`** (um round-trip de verdade por JSON, que
+  resolve tudo recursivamente pra array puro, Resources/Collections aninhados incluídos) em vez
+  de confiar em `->toArray()` puro quando o Resource tem qualquer campo composto.
 
 ## Antes de assumir o estado de uma PR/issue
 

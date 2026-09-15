@@ -42,6 +42,10 @@ tags:
     description: >
       Catálogo global de acessórios (api#92) — cadastrado uma vez, reaproveitado por equipamentos
       de qualquer cliente
+  - name: equipment-models
+    description: >
+      Catálogo global de modelos de equipamento (api#101) — cadastrado uma vez, reaproveitado por
+      qualquer cliente
   - name: orders
     description: Ordens de Serviço
 
@@ -374,6 +378,53 @@ paths:
                 type: object
                 properties:
                   data: { $ref: "#/components/schemas/Accessory" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /equipment-models:
+    get:
+      tags: [equipment-models]
+      summary: Lista o catálogo global de modelos de equipamento, ordenado por nome
+      description: >
+        Sem paginação nem busca no servidor (mesma decisão do catálogo de acessórios): a lista
+        inteira volta de uma vez, busca é filtro client-side no seletor do front.
+      operationId: listEquipmentModels
+      responses:
+        "200":
+          description: Lista de modelos de equipamento
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/EquipmentModel" }
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [equipment-models]
+      summary: Cadastra um modelo novo no catálogo global
+      description: >
+        Também é chamado implicitamente por POST/PUT nos equipamentos quando o técnico digita um
+        modelo que ainda não existe no catálogo — fica salvo para os próximos cadastros (api#101).
+      operationId: createEquipmentModel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EquipmentModelInput" }
+      responses:
+        "201":
+          description: Modelo cadastrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/EquipmentModel" }
         "422":
           $ref: "#/components/responses/ValidationError"
         "401":
@@ -912,6 +963,38 @@ components:
       required: [name]
       properties:
         name: { type: string }
+
+    EquipmentModel:
+      type: object
+      description: >
+        Catálogo global de modelos de equipamento (api#101) — cadastrado uma vez, reaproveitado
+        por qualquer cliente. Mesma ideia do catálogo de acessórios, agora pro próprio aparelho:
+        "Ultrassom / Sonopus / XYZ-100" vira uma entrada só, e o cadastro da unidade física do
+        cliente (Equipment) guarda o que é dela — número de série, patrimônio, acessórios.
+
+        Repetido não é bloqueado pela API (sem constraint unique), mesma decisão já tomada pro
+        nome de Accessory e pro serial_number de Equipment.
+      properties:
+        id: { type: string, format: uuid }
+        name:
+          { type: string, description: "Nome/tipo do aparelho, ex.: Ultrassom" }
+        brand:
+          {
+            type: ["string", "null"],
+            description: "Marca — obrigatória em cadastros novos (ver EquipmentModelInput); nullable porque o backfill cria entradas a partir de equipamentos antigos, que podem ter ficado sem",
+          }
+        model:
+          { type: ["string", "null"], description: "Modelo — mesma ressalva de brand acima" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    EquipmentModelInput:
+      type: object
+      required: [name, brand, model]
+      properties:
+        name: { type: string }
+        brand: { type: string }
+        model: { type: string }
 
     OrderEquipmentInput:
       description: >

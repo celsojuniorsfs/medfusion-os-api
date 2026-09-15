@@ -137,7 +137,7 @@ continua `redis` e as variáveis de ambiente continuam `REDIS_*` — é a nomenc
 framework (amarrada ao protocolo, não ao software), não o nome do que roda de fato. O que muda
 de nome é só a infraestrutura: o serviço `valkey` (antes `redis`) no `docker-compose.yml`.
 
-- **Contador de versão por módulo** (`Cache::get('equipments:cache-version', 1)`), embutido na
+- **Contador de versão por módulo** (`Cache::get('equipments:cache-version', 0)`), embutido na
   chave de cache (`"equipments:index:v{$version}:{$id}"`) — não `Cache::tags()`. **Trocado em
   14/09/2026** depois de um bug em produção: acessório salvo "sumia" ao reabrir o equipamento.
   `Cache::tags()->flush()` usa operações multi-chave no Redis (um conjunto por tag, manipulado
@@ -146,6 +146,14 @@ de nome é só a infraestrutura: o serviço `valkey` (antes `redis`) no `docker-
   desenvolvimento (um container só) nunca reproduziria. `Cache::increment()` — usado pra
   invalidar — é uma única chave (`INCRBY`), funciona igual em qualquer topologia: zero operação
   multi-chave, zero essa classe de risco.
+  - **O padrão de leitura é `0`, não `1`** — achado num segundo bug (15/09/2026), reproduzido
+    localmente: o primeiro `Cache::increment()` de verdade também produz `1` (Redis trata
+    `INCRBY` numa chave inexistente como se partisse de 0). Se o padrão de leitura fosse `1`,
+    uma leitura feita **antes** de qualquer escrita cairia na mesma chave versionada que a
+    leitura de **depois** da primeira escrita da vida daquele módulo — a lista vazia cacheada
+    na primeira leitura sobrevivia ao cadastro seguinte. `0` nunca é um valor real pós-
+    incremento (que começa em `1`), então as duas leituras nunca mais colidem, em nenhuma
+    ordem entre leitura e escrita.
   - Uma versão por módulo inteiro (`'clients'`, `'equipments'`, `'orders'`), não por
     cliente/recurso individual — uma escrita em qualquer registro do módulo invalida a listagem
     inteira, mesmo de um cliente não afetado. Granularidade por cliente foi cogitada e

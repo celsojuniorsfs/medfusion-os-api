@@ -31,7 +31,13 @@ class ClientController
         // versão corrente do módulo (contador simples, não tags — ver ClientProjector::forgetCache).
         // Invalidado por inteiro a cada evento do módulo, não por TTL: nunca serve dado
         // desatualizado, então o TTL aqui é só um limite de segurança.
-        $version = Cache::get('clients:cache-version', 1);
+        // Padrão 0, não 1: o primeiro Cache::increment() de verdade também produz 1 (Redis
+        // trata INCRBY numa chave inexistente como se partisse de 0) — se o padrão de leitura
+        // fosse 1, colidiria com esse primeiro valor real e uma leitura feita ANTES de
+        // qualquer escrita bateria na mesma chave que a leitura de DEPOIS da primeira escrita
+        // (achado ao reproduzir localmente: lista vazia cacheada em v1 sobrevivia ao primeiro
+        // cadastro, que também virava v1).
+        $version = Cache::get('clients:cache-version', 0);
         $data = Cache::remember(
             "clients:index:v{$version}:".sha1($request->fullUrl()),
             now()->addHour(),

@@ -30,7 +30,9 @@ class EquipmentController
         // clientes, não só do dono do evento. EquipmentUpdated/EquipmentRemoved nem carregam
         // client_id, então não dava pra invalidar granularmente sem uma consulta extra ao banco
         // dentro do Projector — listas por cliente são pequenas, o cache miss a mais não pesa.
-        $version = Cache::get('equipments:cache-version', 1);
+        // Padrão 0, não 1 — ver o mesmo comentário em ClientController::index (achado ao
+        // reproduzir localmente exatamente este bug: cadastro sumindo da listagem).
+        $version = Cache::get('equipments:cache-version', 0);
         $data = Cache::remember(
             "equipments:index:v{$version}:{$id}",
             now()->addHour(),

@@ -36,7 +36,8 @@ class OrderController
         // page/per_page) sem listar cada um manualmente, mais a versão corrente do módulo
         // (contador simples, não tags — ver OrderProjector::forgetCache). Invalidado por inteiro
         // a cada evento do módulo, não por TTL.
-        $version = Cache::get('orders:cache-version', 1);
+        // Padrão 0, não 1 — ver o mesmo comentário em ClientController::index.
+        $version = Cache::get('orders:cache-version', 0);
         $data = Cache::remember(
             "orders:index:v{$version}:".sha1($request->fullUrl()),
             now()->addHour(),

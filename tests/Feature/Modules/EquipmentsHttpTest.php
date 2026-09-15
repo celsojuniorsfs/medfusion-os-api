@@ -340,4 +340,31 @@ class EquipmentsHttpTest extends TestCase
             ->getJson("/api/v1/clients/{$clientId}/equipments")
             ->assertJsonCount(2, 'data');
     }
+
+    /**
+     * Achado ao reproduzir um bug relatado em ambiente local (15/09/2026): quando a PRIMEIRA
+     * leitura do módulo (nunca cadastrou nada ainda) acontece ANTES do primeiro cadastro, ela
+     * cacheia uma lista vazia sob a "versão" default do contador — se esse default coincidisse
+     * com o valor que o primeiro `Cache::increment()` de verdade produz (Redis trata `INCRBY`
+     * numa chave inexistente como se partisse de 0, ou seja, o primeiro incremento já é 1), o
+     * cadastro seguinte "sumia" da listagem: a leitura pós-cadastro caía na MESMA chave
+     * versionada que já tinha a lista vazia. Diferente de
+     * test_registering_a_new_equipment_invalidates_the_listing_cache (que cadastra ANTES da
+     * primeira leitura) — aqui a ordem é invertida de propósito.
+     */
+    public function test_registering_the_first_equipment_appears_even_when_the_list_was_read_empty_before(): void
+    {
+        $clientId = $this->aClientId();
+        $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson("/api/v1/clients/{$clientId}/equipments")
+            ->assertJsonCount(0, 'data');
+
+        $this->anEquipmentId($clientId, 'Bisturi', 'SN-1');
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson("/api/v1/clients/{$clientId}/equipments")
+            ->assertJsonCount(1, 'data');
+    }
 }

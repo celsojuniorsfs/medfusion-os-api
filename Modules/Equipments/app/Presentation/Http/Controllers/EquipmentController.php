@@ -25,20 +25,31 @@ class EquipmentController
     {
         Client::findOrFail($id);
 
-        // Cache de listagem (ver docs/architecture.md § Cache) — tag única do módulo (não por
+        // Cache de listagem (ver docs/architecture.md § Cache) — versão única do módulo (não por
         // cliente): uma escrita em qualquer equipamento invalida a listagem de todos os
         // clientes, não só do dono do evento. EquipmentUpdated/EquipmentRemoved nem carregam
         // client_id, então não dava pra invalidar granularmente sem uma consulta extra ao banco
         // dentro do Projector — listas por cliente são pequenas, o cache miss a mais não pesa.
-        $data = Cache::tags(['equipments'])->remember(
-            "equipments:index:{$id}",
+        // Padrão 0, não 1 — ver o mesmo comentário em ClientController::index (achado ao
+        // reproduzir localmente exatamente este bug: cadastro sumindo da listagem).
+        $version = Cache::get('equipments:cache-version', 0);
+        $data = Cache::remember(
+            "equipments:index:v{$version}:{$id}",
             now()->addHour(),
+            // ->response()->getData(true) — array puro de verdade, não ->toArray() direto: ver
+            // o mesmo comentário em ClientController::index. Achado nesta chave especificamente:
+            // ->toArray() só resolve o nível de fora (a lista de recursos) — o `accessories` de
+            // EquipmentResource é um ->map() sobre uma Collection, que continua sendo uma
+            // Collection (objeto), não vira array puro sozinho. Guardado assim no cache, virava
+            // __PHP_Incomplete_Class na volta (unserialize bloqueia objeto, ver CLAUDE.md) — o
+            // equipamento voltava com accessories quebrado, o formulário de editar interpretava
+            // como "sem acessórios".
             fn () => EquipmentResource::collection(
                 Equipment::with('accessories.accessory')->where('client_id', $id)->get(),
-            )->toArray(request()),
+            )->response()->getData(true),
         );
 
-        return response()->json(['data' => $data]);
+        return response()->json($data);
     }
 
     public function store(EquipmentRequest $request, string $id, RegisterEquipment $registerEquipment): JsonResponse

@@ -62,12 +62,15 @@ class ClientProjector extends Projector
     }
 
     /**
-     * Invalida a listagem em cache (ver docs/architecture.md § Cache) — uma tag por módulo,
-     * limpa por inteiro a cada evento seu, em vez de TTL: o Projector já é o único lugar que
-     * escreve no read model, então vira também o único lugar que invalida o cache dele.
+     * Invalida a listagem em cache (ver docs/architecture.md § Cache) incrementando um contador
+     * de versão — não `Cache::tags()->flush()` (achado em produção: operação multi-chave, fonte
+     * conhecida de comportamento inconsistente em Redis/Valkey gerenciado com réplica/cluster).
+     * `increment()` é uma única chave, funciona igual em qualquer topologia. O Projector já é o
+     * único lugar que escreve no read model, então vira também o único lugar que invalida o
+     * cache dele.
      */
     private function forgetCache(): void
     {
-        Cache::tags(['clients'])->flush();
+        Cache::increment('clients:cache-version');
     }
 }

@@ -81,15 +81,13 @@ conexão):
 | `QUEUE_CONNECTION` | `database` — usada para enfileirar o envio de e-mail/WhatsApp da OS (ver abaixo); PDF continua gerado de forma síncrona no request |
 | `PULSE_ALLOWED_EMAILS` | e-mails (separados por vírgula) autorizados a abrir `/pulse` — ver "Monitoramento" abaixo |
 
-**⚠️ Pré-requisito de deploy (desde a introdução do cache de listagens, ver
-`docs/architecture.md` § Cache)**: o código passou a chamar `Cache::tags([...])` em toda
-listagem e em todo Projector — `database` (o driver usado até aqui) **não suporta tags** e
-lançaria `BadMethodCallException` em produção, quebrando com 500 **todo** GET de listagem e
-**toda** escrita (cadastro/edição/remoção) de Clients, Equipments e Orders, não só a listagem.
-Antes de fazer o deploy desta mudança: anexar um recurso **Valkey** (fork open-source do Redis,
-mesmo protocolo — ver `docs/architecture.md` § Cache) ao environment de produção no Laravel
-Cloud e trocar `CACHE_STORE` pra `redis` no painel (nome do driver do Laravel, não do software)
-— os dois passos precisam acontecer juntos, nunca só um dos dois.
+**Sobre o cache de listagens** (ver `docs/architecture.md` § Cache): o código usa
+`Cache::increment()`/`Cache::get()` — operações simples de uma chave só, suportadas por
+qualquer driver (`database` incluído, ao contrário do antigo esquema com `Cache::tags()`, que
+exigia Redis/Valkey e quebrava com 500 em `database`). Redis/Valkey (já anexado ao environment
+de produção) continua sendo o certo por performance — `remember()` num banco relacional é bem
+mais lento sob carga do que num key-value store — mas deixou de ser um pré-requisito rígido pra
+não quebrar nada.
 
 **Frontend (Vercel)** — não são variáveis do Laravel, mas fecham o par: `environment.ts` /
 `environment.prod.ts` do Angular trazem `apiUrl` apontando para a API de cada ambiente.

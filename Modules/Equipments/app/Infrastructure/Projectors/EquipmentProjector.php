@@ -54,14 +54,16 @@ class EquipmentProjector extends Projector
     }
 
     /**
-     * Invalida a listagem em cache (ver docs/architecture.md § Cache) — uma tag só pro módulo
-     * inteiro, não por cliente: EquipmentUpdated/EquipmentRemoved nem carregam client_id no
-     * evento, e listas por cliente são pequenas o bastante pra um cache miss a mais em clientes
-     * não afetados não pesar.
+     * Invalida a listagem em cache (ver docs/architecture.md § Cache) incrementando um contador
+     * de versão — não `Cache::tags()->flush()` (achado em produção: operação multi-chave, fonte
+     * conhecida de comportamento inconsistente em Redis/Valkey gerenciado com réplica/cluster).
+     * Uma versão só pro módulo inteiro, não por cliente: EquipmentUpdated/EquipmentRemoved nem
+     * carregam client_id no evento, e listas por cliente são pequenas o bastante pra um cache
+     * miss a mais em clientes não afetados não pesar.
      */
     private function forgetCache(): void
     {
-        Cache::tags(['equipments'])->flush();
+        Cache::increment('equipments:cache-version');
     }
 
     /**

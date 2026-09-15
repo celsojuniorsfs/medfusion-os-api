@@ -33,10 +33,12 @@ class OrderController
     {
         // Cache de listagem (ver docs/architecture.md § Cache) — chave é a própria URL completa,
         // cobrindo os 6 filtros possíveis (client_id, equipment_id, status, date_from, date_to,
-        // page/per_page) sem listar cada um manualmente. Invalidado por inteiro a cada evento do
-        // módulo (Projector de Orders), não por TTL.
-        $data = Cache::tags(['orders'])->remember(
-            'orders:index:'.sha1($request->fullUrl()),
+        // page/per_page) sem listar cada um manualmente, mais a versão corrente do módulo
+        // (contador simples, não tags — ver OrderProjector::forgetCache). Invalidado por inteiro
+        // a cada evento do módulo, não por TTL.
+        $version = Cache::get('orders:cache-version', 1);
+        $data = Cache::remember(
+            "orders:index:v{$version}:".sha1($request->fullUrl()),
             now()->addHour(),
             function () use ($request) {
                 $perPage = min(100, max(1, (int) $request->query('per_page', 15)));

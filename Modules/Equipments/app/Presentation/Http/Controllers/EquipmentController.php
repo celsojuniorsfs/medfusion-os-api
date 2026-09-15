@@ -25,13 +25,14 @@ class EquipmentController
     {
         Client::findOrFail($id);
 
-        // Cache de listagem (ver docs/architecture.md § Cache) — tag única do módulo (não por
+        // Cache de listagem (ver docs/architecture.md § Cache) — versão única do módulo (não por
         // cliente): uma escrita em qualquer equipamento invalida a listagem de todos os
         // clientes, não só do dono do evento. EquipmentUpdated/EquipmentRemoved nem carregam
         // client_id, então não dava pra invalidar granularmente sem uma consulta extra ao banco
         // dentro do Projector — listas por cliente são pequenas, o cache miss a mais não pesa.
-        $data = Cache::tags(['equipments'])->remember(
-            "equipments:index:{$id}",
+        $version = Cache::get('equipments:cache-version', 1);
+        $data = Cache::remember(
+            "equipments:index:v{$version}:{$id}",
             now()->addHour(),
             fn () => EquipmentResource::collection(
                 Equipment::with('accessories.accessory')->where('client_id', $id)->get(),

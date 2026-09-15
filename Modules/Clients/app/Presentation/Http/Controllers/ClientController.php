@@ -27,11 +27,13 @@ class ClientController
     public function index(Request $request): JsonResponse
     {
         // Cache de listagem (ver docs/architecture.md § Cache) — chave é a própria URL completa
-        // (cobre search/page/per_page de uma vez, sem listar cada parâmetro manualmente).
-        // Invalidado por inteiro a cada evento do módulo (ClientProjector), não por TTL: nunca
-        // serve dado desatualizado, então o TTL aqui é só um limite de segurança.
-        $data = Cache::tags(['clients'])->remember(
-            'clients:index:'.sha1($request->fullUrl()),
+        // (cobre search/page/per_page de uma vez, sem listar cada parâmetro manualmente) mais a
+        // versão corrente do módulo (contador simples, não tags — ver ClientProjector::forgetCache).
+        // Invalidado por inteiro a cada evento do módulo, não por TTL: nunca serve dado
+        // desatualizado, então o TTL aqui é só um limite de segurança.
+        $version = Cache::get('clients:cache-version', 1);
+        $data = Cache::remember(
+            "clients:index:v{$version}:".sha1($request->fullUrl()),
             now()->addHour(),
             function () use ($request) {
                 $search = $request->query('search');

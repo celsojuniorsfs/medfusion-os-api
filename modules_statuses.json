@@ -3,5 +3,6 @@
     "Clients": true,
     "Equipments": true,
     "Orders": true,
-    "Accessories": true
+    "Accessories": true,
+    "EquipmentModels": true
 }

@@ -157,6 +157,31 @@ depois. `equipment_id` continua existindo para navegação até o catálogo e pa
 Mesmo padrão de "snapshot de linha de pedido" usado em qualquer sistema de vendas — o preço do
 produto na nota não muda se o catálogo mudar depois.
 
+## Catálogo global de modelos de equipamento (api#101)
+
+Pedido do cliente: parar de redigitar nome/marca/modelo a cada unidade física. "Ultrassom /
+Sonopus / XYZ-100" vira **uma** entrada em `equipment_models`, global (compartilhada entre todos
+os clientes, igual ao catálogo de acessórios do api#92), e o cadastro do equipamento do cliente
+guarda só o que é daquela unidade: número de série, patrimônio, acessórios.
+
+Dois níveis de catálogo, que é fácil confundir:
+
+- `equipment_models` — **global**, o modelo do aparelho. Reaproveitado por qualquer cliente.
+- `equipments` — **por cliente**, a unidade física que está lá na clínica (a seção acima).
+
+`equipments` aponta pro modelo por `equipment_model_id`, mas **continua guardando
+`name`/`brand`/`model`** — não é redundância esquecida, é necessidade: `equipments` é uma projeção
+reconstruída por `event-sourcing:replay`, e os eventos gravados antes do api#101 só têm o trio
+como texto, sem id de catálogo nenhum. Sem as colunas, o projector teria que criar entrada de
+catálogo durante um replay (ou seja: gravar evento enquanto relê o event store). O trio é sempre
+escrito a partir da entrada do catálogo resolvida — mesmo raciocínio FK+snapshot de
+`order_equipments` acima.
+
+Nome de modelo repetido **não é bloqueado** (sem `unique`), mesma decisão do `serial_number` e do
+nome de acessório: o seletor do frontend oferece o que já existe antes de deixar cadastrar um
+novo. Sem editar/remover entrada nesta rodada — ver `architecture.md` § Agregados e eventos pra
+por que essa ausência importa pro cache.
+
 ## Notificação automática (e-mail + WhatsApp)
 
 Novo na validação: ao criar a OS com sucesso, o backend gera o PDF e dispara o envio de uma
@@ -225,9 +250,10 @@ português — ex.: `reported_defect` guarda o texto "Equipamento sem funções 
 | Cidade | `city` | `clients` |
 | UF | `state` | `clients` |
 | CEP | `postal_code` | `clients` |
-| Equipamento (nome/tipo) | `name` | `equipments`, `order_equipments` |
-| Marca | `brand` | `equipments`, `order_equipments` |
-| Modelo | `model` | `equipments`, `order_equipments` |
+| Equipamento (nome/tipo) | `name` | `equipments`, `order_equipments`, `equipment_models` |
+| Marca | `brand` | `equipments`, `order_equipments`, `equipment_models` |
+| Modelo (texto do aparelho) | `model` | `equipments`, `order_equipments`, `equipment_models` |
+| Modelo (entrada do catálogo global) | `equipment_model` | `equipment_models`, `equipments.equipment_model_id` |
 | Número de série | `serial_number` | `equipments`, `order_equipments` |
 | Patrimônio | `asset_tag` | `equipments`, `order_equipments` |
 | Acessórios | `accessories` | `equipments`, `order_equipments` |

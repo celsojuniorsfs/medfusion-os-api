@@ -17,7 +17,8 @@ camada de domínio dentro de cada módulo; o pacote só cuida do "empacotamento"
 
 ## Módulos
 
-`Identity`, `Clients`, `Equipments`, `Orders` — um por conceito de negócio, não por camada
+`Identity`, `Clients`, `Equipments`, `Orders`, `Accessories`, `EquipmentModels` — um por conceito
+de negócio, não por camada
 técnica. Cada um é um módulo nwidart em `Modules/<Módulo>/` (`module.json`, `composer.json`
 próprio, mesclado no autoload raiz via `wikimedia/composer-merge-plugin`). Dentro de
 `Modules/<Módulo>/app/` seguimos Clean Architecture, de dentro para fora:
@@ -32,7 +33,7 @@ Modules/<Módulo>/
     Presentation/    Http/Controllers, Http/Requests, Http/Resources
     Providers/       <Módulo>ServiceProvider.php (extends ModuleServiceProvider), RouteServiceProvider
   routes/api.php      Só nos módulos com endpoint HTTP (hoje todos: Identity, Clients,
-                      Equipments e Orders)
+                      Equipments, Orders, Accessories e EquipmentModels)
   database/
     migrations/       Descobertas automaticamente (auto-discover.migrations, config/modules.php)
     seeders/
@@ -82,6 +83,13 @@ de negócio (ex.: `certificate_number`).
 | Clients | `ClientAggregate` | `ClientRegistered`, `ClientUpdated`, `ClientRemoved` |
 | Equipments | `EquipmentAggregate` | `EquipmentRegistered`, `EquipmentUpdated`, `EquipmentRemoved` |
 | Orders | `OrderAggregate` | `OrderOpened`, `OrderEquipmentAttached`, `OrderItemAdded`, `OrderStatusChanged` |
+| Accessories | `AccessoryAggregate` | `AccessoryRegistered` |
+| EquipmentModels | `EquipmentModelAggregate` | `EquipmentModelRegistered` |
+
+Os dois últimos são **catálogos globais append-only** — cadastra e reaproveita, sem update/remove
+(fora do pedido original das issues api#92/#101). Essa ausência de edição é o que permite que
+`equipments` guarde nome/marca/modelo como snapshot sem risco de ficar desatualizado, e é por isso
+que a listagem deles não precisa de cache nem invalida a de ninguém (ver § Cache).
 
 `OrderAggregate` também guarda `OrderEquipment` e `OrderItem` como parte do seu próprio stream de
 eventos (são entidades internas do agregado Order, não agregados independentes — o snapshot de
@@ -127,8 +135,16 @@ por seguir o padrão de Actions.
 ## Cache — listagens em Valkey, invalidadas por contador de versão
 
 Endpoints de listagem (`index`) cacheiam a resposta lida (`Cache::remember(...)`) — `GET
-/clients`, `GET /clients/{id}/equipments`, `GET /orders`. `show`/detalhe e `GET /accessories`
-ficam de fora por enquanto.
+/clients`, `GET /clients/{id}/equipments`, `GET /orders`. `show`/detalhe fica de fora por
+enquanto.
+
+**Exceção com regra própria: os catálogos globais append-only** (`GET /accessories`,
+`GET /equipment-models`) não são cacheados e também **não invalidam ninguém**. São tabelas
+pequenas, sem filtro, e sobretudo sem edição: como não existe update, o nome/marca/modelo que
+`equipments` guarda como snapshot nunca pode ficar desatualizado em relação ao catálogo. Se um dia
+entrar um `AccessoryUpdated`/`EquipmentModelUpdated`, esses projectors vão precisar passar a
+incrementar `equipments:cache-version` junto — do contrário a correção de um nome não aparece nas
+listagens de equipamento já cacheadas.
 
 Servidor real por trás do cache: **Valkey** (fork open-source do Redis mantido pela Linux
 Foundation, mesmo protocolo RESP e mesmos comandos — criado depois da Redis Inc. mudar a licença

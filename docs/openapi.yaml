@@ -840,8 +840,13 @@ components:
             type: string,
             description: "Nome/tipo do equipamento, ex.: Bisturi",
           }
-        brand: { type: string, description: "Marca" }
-        model: { type: string, description: "Modelo" }
+        brand:
+          {
+            type: ["string", "null"],
+            description: "Marca — obrigatório em cadastros novos (ver EquipmentInput), mas equipamentos cadastrados antes do api#92 podem ter ficado sem",
+          }
+        model:
+          { type: ["string", "null"], description: "Modelo — mesma ressalva de brand acima" }
         serial_number:
           { type: ["string", "null"], description: "Número de série" }
         asset_tag: { type: ["string", "null"], description: "Patrimônio" }

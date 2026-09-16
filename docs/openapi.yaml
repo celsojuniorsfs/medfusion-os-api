@@ -327,12 +327,122 @@ paths:
       tags: [equipments]
       summary: Remove um equipamento do catálogo do cliente
       operationId: deleteClientEquipment
+      description: >
+        Remove também as fotos do equipamento — as linhas por cascade no banco, e os arquivos no
+        Object Storage por um Reactor (api#102).
       responses:
         "204": { description: Removido }
         "404":
           $ref: "#/components/responses/NotFound"
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /clients/{id}/equipments/{equipmentId}/photos:
+    parameters:
+      - $ref: "#/components/parameters/ClientId"
+      - $ref: "#/components/parameters/EquipmentId"
+    get:
+      tags: [equipments]
+      summary: Lista as fotos do equipamento
+      description: >
+        Endpoint próprio, fora de GET /clients/{id}/equipments de propósito (api#102): a listagem de
+        equipamentos é cacheada, e a `url` de cada foto é assinada com validade curta — congelá-la
+        no cache entregaria link vencido. Aqui nada é cacheado e a URL é sempre nova.
+      operationId: listEquipmentPhotos
+      responses:
+        "200":
+          description: Fotos do equipamento, da mais antiga para a mais recente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/EquipmentPhoto" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [equipments]
+      summary: Envia uma foto do equipamento
+      description: >
+        multipart/form-data, campo `photo`. Aceita jpeg/png/webp até 8 MB. HEIC (padrão do iPhone)
+        ainda não é aceito — converter exigiria imagick no runtime (ressalva registrada em api#102).
+      operationId: uploadEquipmentPhoto
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo: { type: string, format: binary }
+      responses:
+        "201":
+          description: Foto enviada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/EquipmentPhoto" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /clients/{id}/equipments/{equipmentId}/photos/{photoId}:
+    parameters:
+      - $ref: "#/components/parameters/ClientId"
+      - $ref: "#/components/parameters/EquipmentId"
+      - name: photoId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [equipments]
+      summary: Remove uma foto do equipamento
+      description: >
+        Apaga a linha e o arquivo no Object Storage. Uma foto de outro equipamento devolve 404, não
+        403 — mesma decisão do PUT de equipamento.
+      operationId: deleteEquipmentPhoto
+      responses:
+        "204": { description: Removida }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /equipment-photos/{photoId}:
+    parameters:
+      - name: photoId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [equipments]
+      summary: Serve o arquivo da foto (URL assinada)
+      description: >
+        **Única rota do projeto fora do `auth:sanctum`.** Uma tag `<img>` não manda header
+        Authorization, então a credencial é a assinatura da própria URL, com validade de 30 minutos
+        — é exatamente a `url` que EquipmentPhoto devolve, e não deve ser montada à mão. Sem
+        assinatura válida, 403.
+      operationId: showEquipmentPhoto
+      security: []
+      responses:
+        "200":
+          description: O arquivo da imagem
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+        "403": { description: Assinatura ausente, inválida ou expirada }
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /accessories:
     get:
@@ -920,6 +1030,28 @@ components:
         accessory_id: { type: string, format: uuid }
         name: { type: string }
         quantity: { type: integer, minimum: 1 }
+
+    EquipmentPhoto:
+      type: object
+      description: >
+        Foto do equipamento (api#102) — pedido do cliente pra registrar como o aparelho chegou e não
+        ter divergência na devolução. O arquivo mora no Object Storage; aqui vêm só os metadados e
+        uma URL assinada temporária.
+      properties:
+        id: { type: string, format: uuid }
+        equipment_id: { type: string, format: uuid }
+        original_name:
+          { type: string, description: "Nome do arquivo como veio do dispositivo" }
+        mime_type: { type: string }
+        size: { type: integer, description: "Bytes" }
+        url:
+          type: string
+          format: uri
+          description: >
+            URL assinada, **válida por 30 minutos**, para GET /equipment-photos/{photoId}. Gerada a
+            cada resposta — não guarde: use a que veio na última listagem e recarregue a lista
+            quando expirar.
+        created_at: { type: string, format: date-time }
 
     EquipmentInput:
       type: object

@@ -2,6 +2,8 @@
 
 namespace Modules\Equipments\Domain;
 
+use Modules\Equipments\Domain\Events\EquipmentPhotoAdded;
+use Modules\Equipments\Domain\Events\EquipmentPhotoRemoved;
 use Modules\Equipments\Domain\Events\EquipmentRegistered;
 use Modules\Equipments\Domain\Events\EquipmentRemoved;
 use Modules\Equipments\Domain\Events\EquipmentUpdated;
@@ -55,10 +57,33 @@ class EquipmentAggregate extends AggregateRoot
         return $this;
     }
 
-    public function remove(): self
+    /**
+     * O binário da foto não passa por aqui: o arquivo já foi gravado no disco pela Presentation e
+     * o evento carrega só o caminho e os metadados (ver EquipmentPhotoAdded).
+     */
+    public function addPhoto(string $photoId, string $path, string $originalName, string $mimeType, int $size): self
+    {
+        $this->recordThat(new EquipmentPhotoAdded($photoId, $path, $originalName, $mimeType, $size));
+
+        return $this;
+    }
+
+    public function removePhoto(string $photoId, string $path): self
+    {
+        $this->recordThat(new EquipmentPhotoRemoved($photoId, $path));
+
+        return $this;
+    }
+
+    /**
+     * @param  array<int, string>  $photoPaths  ver EquipmentRemoved — quem apaga os arquivos é o
+     *                                          Reactor, e a essa altura as linhas já sumiram por
+     *                                          cascade, então os caminhos precisam viajar no evento
+     */
+    public function remove(array $photoPaths = []): self
     {
         if (! $this->removed) {
-            $this->recordThat(new EquipmentRemoved);
+            $this->recordThat(new EquipmentRemoved($photoPaths));
         }
 
         return $this;
@@ -67,6 +92,10 @@ class EquipmentAggregate extends AggregateRoot
     protected function applyEquipmentRegistered(EquipmentRegistered $event): void {}
 
     protected function applyEquipmentUpdated(EquipmentUpdated $event): void {}
+
+    protected function applyEquipmentPhotoAdded(EquipmentPhotoAdded $event): void {}
+
+    protected function applyEquipmentPhotoRemoved(EquipmentPhotoRemoved $event): void {}
 
     protected function applyEquipmentRemoved(EquipmentRemoved $event): void
     {

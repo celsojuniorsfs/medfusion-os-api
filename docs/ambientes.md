@@ -32,7 +32,8 @@ Deploy automático a partir da branch `main` do GitHub. Recursos anexados ao env
 - **Banco**: cluster **Laravel MySQL**, tamanho **Pro** (always-on — sem scale-to-zero em
   produção, para não pagar o primeiro acesso do dia com uma consulta lenta enquanto o banco
   acorda).
-- **Object Storage**: guarda os PDFs gerados (ver `openapi.yaml`, `POST /orders/{id}/pdf`). O
+- **Object Storage**: guarda os PDFs gerados (ver `openapi.yaml`, `POST /orders/{id}/pdf`) e as
+  **fotos dos equipamentos** (api#102, já em uso — ao contrário do PDF, que ainda não existe). O
   filesystem do compute é **efêmero** — não sobrevive a deploy nem é compartilhado entre réplicas
   — então nenhum arquivo de aplicação pode depender de `storage/app` além do tempo de uma
   requisição.

@@ -84,12 +84,19 @@ de negócio (ex.: `certificate_number`).
 | Equipments | `EquipmentAggregate` | `EquipmentRegistered`, `EquipmentUpdated`, `EquipmentRemoved`, `EquipmentPhotoAdded`, `EquipmentPhotoRemoved` |
 | Orders | `OrderAggregate` | `OrderOpened`, `OrderEquipmentAttached`, `OrderItemAdded`, `OrderStatusChanged` |
 | Accessories | `AccessoryAggregate` | `AccessoryRegistered` |
-| EquipmentModels | `EquipmentModelAggregate` | `EquipmentModelRegistered` |
+| EquipmentModels | `EquipmentModelAggregate` | `EquipmentModelRegistered`, `EquipmentModelUpdated`, `EquipmentModelRemoved` |
 
-Os dois últimos são **catálogos globais append-only** — cadastra e reaproveita, sem update/remove
-(fora do pedido original das issues api#92/#101). Essa ausência de edição é o que permite que
-`equipments` guarde nome/marca/modelo como snapshot sem risco de ficar desatualizado, e é por isso
-que a listagem deles não precisa de cache nem invalida a de ninguém (ver § Cache).
+Os dois últimos são os **catálogos globais**. Nasceram append-only (api#92/#101), e foi essa ausência
+de edição que permitiu a `equipments` guardar nome/marca/modelo como snapshot sem risco de
+desatualizar. O api#109 acrescentou edição e remoção a EquipmentModels — porque catálogo global sem
+manutenção acumula erro de digitação e dado de teste pra sempre — e com isso duas coisas passaram a
+valer:
+
+- **Renomear uma entrada corrige os equipamentos que a usam**: quem faz isso é o `EquipmentProjector`
+  (do módulo Equipments) reagindo a `EquipmentModelUpdated`, porque Equipments pode conhecer
+  EquipmentModels e não o contrário. É projector e não reactor de propósito: um replay precisa
+  reaplicar o rename.
+- **A listagem de equipamentos passa a ser invalidada por evento de catálogo** — ver § Cache.
 
 `OrderAggregate` também guarda `OrderEquipment` e `OrderItem` como parte do seu próprio stream de
 eventos (são entidades internas do agregado Order, não agregados independentes — o snapshot de
@@ -149,13 +156,15 @@ Endpoints de listagem (`index`) cacheiam a resposta lida (`Cache::remember(...)`
 /clients`, `GET /clients/{id}/equipments`, `GET /orders`. `show`/detalhe fica de fora por
 enquanto.
 
-**Exceção com regra própria: os catálogos globais append-only** (`GET /accessories`,
-`GET /equipment-models`) não são cacheados e também **não invalidam ninguém**. São tabelas
-pequenas, sem filtro, e sobretudo sem edição: como não existe update, o nome/marca/modelo que
-`equipments` guarda como snapshot nunca pode ficar desatualizado em relação ao catálogo. Se um dia
-entrar um `AccessoryUpdated`/`EquipmentModelUpdated`, esses projectors vão precisar passar a
-incrementar `equipments:cache-version` junto — do contrário a correção de um nome não aparece nas
-listagens de equipamento já cacheadas.
+**Os catálogos globais** (`GET /accessories`, `GET /equipment-models`) não são cacheados: tabelas
+pequenas, sem filtro. Mas desde o api#109 eles **invalidam a listagem de equipamentos**, porque ela
+embute o nome/marca/modelo copiado do catálogo e o nome do acessório vindo pela relação — sem isso,
+corrigir um nome não apareceria por até uma hora.
+
+Quem incrementa `equipments:cache-version` é o **`EquipmentProjector`**, reagindo aos eventos de
+catálogo, e não o projector de cada catálogo: a chave pertence a Equipments, e os módulos de
+catálogo estão abaixo dele no grafo — não podem conhecê-lo. (Este parágrafo já anunciou o contrário
+enquanto os catálogos eram append-only; a versão anterior previa por escrito que isso mudaria.)
 
 Servidor real por trás do cache: **Valkey** (fork open-source do Redis mantido pela Linux
 Foundation, mesmo protocolo RESP e mesmos comandos — criado depois da Redis Inc. mudar a licença

@@ -3,6 +3,8 @@
 namespace Modules\EquipmentModels\Infrastructure\Projectors;
 
 use Modules\EquipmentModels\Domain\Events\EquipmentModelRegistered;
+use Modules\EquipmentModels\Domain\Events\EquipmentModelRemoved;
+use Modules\EquipmentModels\Domain\Events\EquipmentModelUpdated;
 use Modules\EquipmentModels\Infrastructure\ReadModels\EquipmentModel;
 use Spatie\EventSourcing\EventHandlers\Projectors\Projector;
 
@@ -18,10 +20,26 @@ class EquipmentModelProjector extends Projector
         ]);
     }
 
+    public function onEquipmentModelUpdated(EquipmentModelUpdated $event): void
+    {
+        EquipmentModel::whereKey($event->aggregateRootUuid())->update([
+            'name' => $event->name,
+            'brand' => $event->brand,
+            'model' => $event->model,
+        ]);
+    }
+
+    public function onEquipmentModelRemoved(EquipmentModelRemoved $event): void
+    {
+        EquipmentModel::whereKey($event->aggregateRootUuid())->delete();
+    }
+
     // Sem Cache::increment aqui, ao contrário dos outros projectors (ver docs/architecture.md
-    // § Cache): a listagem deste catálogo não é cacheada, e o catálogo é append-only — não existe
-    // edição que pudesse deixar desatualizado o snapshot de nome/marca/modelo que `equipments`
-    // guarda. ATENÇÃO: se um dia entrar um EquipmentModelUpdated, ele vai precisar invalidar a
-    // listagem de equipamentos também (Cache::increment('equipments:cache-version')), senão a
-    // correção de um nome de modelo não aparece nas listagens já cacheadas.
+    // § Cache): a listagem deste catálogo não é cacheada.
+    //
+    // Mas a listagem de EQUIPAMENTOS é, e ela embute o nome/marca/modelo copiado do catálogo — o
+    // aviso que este comentário trazia desde o api#101 ("se um dia entrar um EquipmentModelUpdated,
+    // vai precisar invalidar a listagem de equipamentos") virou realidade no api#109. Quem cuida
+    // disso é o EquipmentProjector, reagindo a EquipmentModelUpdated/Removed do lado de Equipments:
+    // a chave `equipments:cache-version` é de lá, e este módulo não pode conhecer aquele.
 }

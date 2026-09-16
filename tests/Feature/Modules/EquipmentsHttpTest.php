@@ -10,6 +10,7 @@ use Modules\Accessories\Domain\AccessoryAggregate;
 use Modules\Accessories\Infrastructure\ReadModels\Accessory;
 use Modules\Clients\Domain\ClientAggregate;
 use Modules\Clients\Domain\Enums\PersonType;
+use Modules\EquipmentModels\Application\UpdateEquipmentModel;
 use Modules\EquipmentModels\Domain\EquipmentModelAggregate;
 use Modules\EquipmentModels\Infrastructure\ReadModels\EquipmentModel;
 use Modules\Equipments\Domain\EquipmentAggregate;
@@ -676,6 +677,168 @@ class EquipmentsHttpTest extends TestCase
                 'no_accessories' => true,
             ])
             ->assertOk();
+    }
+
+    /**
+     * Corrigir um typo no catálogo precisa alcançar a cópia que cada equipamento guarda — senão o
+     * catálogo passa a discordar da tela do equipamento. Quem faz isso é o EquipmentProjector
+     * reagindo a um evento de OUTRO módulo (api#109).
+     */
+    public function test_renaming_a_catalog_model_fixes_the_equipments_that_use_it(): void
+    {
+        $clientId = $this->aClientId();
+        $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson("/api/v1/clients/{$clientId}/equipments", [
+                'name' => 'Utrassom',
+                'brand' => 'Sonopus',
+                'model' => 'XYZ-100',
+                'no_accessories' => true,
+            ])
+            ->assertCreated();
+
+        $modelId = EquipmentModel::where('name', 'Utrassom')->value('id');
+
+        $this->actingAs($user, 'sanctum')
+            ->putJson("/api/v1/equipment-models/{$modelId}", [
+                'name' => 'Ultrassom',
+                'brand' => 'Sonopus',
+                'model' => 'XYZ-100',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('equipments', ['equipment_model_id' => $modelId, 'name' => 'Ultrassom']);
+    }
+
+    /**
+     * A outra metade da regra: OS já emitida guarda o snapshot do que foi atendido na época, e
+     * corrigir o catálogo hoje não reescreve histórico (api-conventions.md § Snapshot do
+     * equipamento na OS).
+     */
+    public function test_renaming_a_catalog_model_does_not_rewrite_the_snapshot_kept_by_orders(): void
+    {
+        $clientId = $this->aClientId();
+        $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson("/api/v1/clients/{$clientId}/equipments", [
+                'name' => 'Utrassom',
+                'brand' => 'Sonopus',
+                'model' => 'XYZ-100',
+                'no_accessories' => true,
+            ])
+            ->assertCreated();
+
+        $equipmentId = Equipment::where('name', 'Utrassom')->value('id');
+        $modelId = EquipmentModel::where('name', 'Utrassom')->value('id');
+
+        // OS de verdade pelo endpoint, em vez de inserir a linha na mão: é o OrderProjector que
+        // grava o snapshot, e é o comportamento dele que este teste precisa travar.
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', [
+                'number' => 1337,
+                'date' => '2026-09-13',
+                'client_id' => $clientId,
+                'labor_cost' => 150.0,
+                'equipments' => [['equipment_id' => $equipmentId]],
+                'items' => [],
+            ])
+            ->assertCreated();
+
+        $this->assertDatabaseHas('order_equipments', ['equipment_id' => $equipmentId, 'name' => 'Utrassom']);
+
+        $this->actingAs($user, 'sanctum')
+            ->putJson("/api/v1/equipment-models/{$modelId}", [
+                'name' => 'Ultrassom',
+                'brand' => 'Sonopus',
+                'model' => 'XYZ-100',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('order_equipments', ['equipment_id' => $equipmentId, 'name' => 'Utrassom']);
+    }
+
+    /** Renomear no catálogo precisa invalidar a listagem cacheada, que embute o nome copiado. */
+    public function test_renaming_a_catalog_model_invalidates_the_equipment_listing_cache(): void
+    {
+        $clientId = $this->aClientId();
+        $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson("/api/v1/clients/{$clientId}/equipments", [
+                'name' => 'Utrassom',
+                'brand' => 'Sonopus',
+                'model' => 'XYZ-100',
+                'no_accessories' => true,
+            ])
+            ->assertCreated();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson("/api/v1/clients/{$clientId}/equipments")
+            ->assertJsonPath('data.0.name', 'Utrassom');
+
+        $modelId = EquipmentModel::where('name', 'Utrassom')->value('id');
+        $this->actingAs($user, 'sanctum')
+            ->putJson("/api/v1/equipment-models/{$modelId}", [
+                'name' => 'Ultrassom',
+                'brand' => 'Sonopus',
+                'model' => 'XYZ-100',
+            ])
+            ->assertOk();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson("/api/v1/clients/{$clientId}/equipments")
+            ->assertJsonPath('data.0.name', 'Ultrassom');
+    }
+
+    /**
+     * A armadilha do rename num equipamento LEGADO (evento anterior ao api#101, sem id de modelo).
+     *
+     * O vínculo desses equipamentos não está em evento nenhum: veio do UPDATE do comando de
+     * backfill, e o projector o re-deriva no replay comparando o trio nome/marca/modelo. Renomear a
+     * entrada do catálogo quebra essa derivação — na volta do replay o trio não casa mais, o
+     * equipamento fica sem modelo e mantém o texto antigo, divergindo da produção.
+     *
+     * Por isso EquipmentModelUpdated carrega também o trio ANTERIOR: é o que permite ao handler
+     * reencontrar quem estava ligado por derivação e corrigir os dois (texto e vínculo).
+     */
+    public function test_renaming_a_catalog_model_survives_a_replay_for_legacy_equipments(): void
+    {
+        $clientId = $this->aClientId();
+        $equipmentId = (string) Str::uuid();
+
+        // Equipamento legado: evento sem equipmentModelId, como os anteriores ao api#101.
+        DB::table('stored_events')->insert([
+            'aggregate_uuid' => $equipmentId,
+            'aggregate_version' => 1,
+            'event_version' => 1,
+            'event_class' => EquipmentRegistered::class,
+            'event_properties' => json_encode([
+                'clientId' => $clientId,
+                'name' => 'Utrassom',
+                'brand' => 'Sonopus',
+                'model' => 'XYZ-100',
+                'serialNumber' => 'SN-LEGADO',
+                'assetTag' => null,
+                'accessories' => [],
+            ]),
+            'meta_data' => json_encode(['aggregate-root-uuid' => $equipmentId, 'aggregate-root-version' => 1]),
+            'created_at' => now(),
+        ]);
+
+        // Catálogo com o mesmo trio, como o backfill deixou, e o rename corrigindo o typo.
+        $modelId = $this->anEquipmentModelId('Utrassom', 'Sonopus', 'XYZ-100');
+        app(UpdateEquipmentModel::class)($modelId, 'Ultrassom', 'Sonopus', 'XYZ-100');
+
+        Equipment::query()->delete();
+        Projectionist::replay(collect([app(EquipmentProjector::class)]));
+
+        $this->assertDatabaseHas('equipments', [
+            'id' => $equipmentId,
+            'name' => 'Ultrassom',
+            'equipment_model_id' => $modelId,
+        ]);
     }
 
     /** Um replay precisa atravessar um stream misto (evento velho + evento novo) sem estourar. */

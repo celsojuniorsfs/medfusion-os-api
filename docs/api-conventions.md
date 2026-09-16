@@ -178,9 +178,20 @@ escrito a partir da entrada do catálogo resolvida — mesmo raciocínio FK+snap
 `order_equipments` acima.
 
 Nome de modelo repetido **não é bloqueado** (sem `unique`), mesma decisão do `serial_number` e do
-nome de acessório: o seletor do frontend oferece o que já existe antes de deixar cadastrar um
-novo. Sem editar/remover entrada nesta rodada — ver `architecture.md` § Agregados e eventos pra
-por que essa ausência importa pro cache.
+nome de acessório: o seletor do frontend oferece o que já existe antes de deixar cadastrar um novo.
+
+### Manutenção do catálogo (api#109)
+
+O catálogo é alimentado sozinho — todo equipamento salvo com marca/modelo digitados cria uma entrada
+—, então erro de digitação e dado de teste entram e ficariam pra sempre. Daí `PUT` e `DELETE` em
+`/equipment-models/{id}`, com duas regras que valem a pena saber de cor:
+
+- **Corrigir uma entrada corrige os equipamentos que a usam.** É o que se espera de "consertei no
+  catálogo": o typo some da tela do equipamento também. **OS já emitidas não mudam** — a seção
+  acima explica por quê.
+- **Remover é recusado com 409 enquanto algum equipamento usar o modelo.** A entrada sobrevive de
+  propósito à remoção de uma unidade física (o "cadastrou uma vez, usa em todos" que o cliente
+  pediu), então ela só sai quando ninguém mais aponta pra ela.
 
 ## Fotos do equipamento (api#102)
 

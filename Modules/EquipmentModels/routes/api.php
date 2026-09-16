@@ -9,4 +9,6 @@ use Modules\EquipmentModels\Presentation\Http\Controllers\EquipmentModelControll
 Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('/equipment-models', [EquipmentModelController::class, 'index']);
     Route::post('/equipment-models', [EquipmentModelController::class, 'store']);
+    Route::put('/equipment-models/{id}', [EquipmentModelController::class, 'update']);
+    Route::delete('/equipment-models/{id}', [EquipmentModelController::class, 'destroy']);
 });

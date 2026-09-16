@@ -4,6 +4,8 @@ namespace Modules\Equipments\Infrastructure\Projectors;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use Modules\EquipmentModels\Domain\Events\EquipmentModelRemoved;
+use Modules\EquipmentModels\Domain\Events\EquipmentModelUpdated;
 use Modules\EquipmentModels\Infrastructure\ReadModels\EquipmentModel;
 use Modules\Equipments\Domain\Events\EquipmentPhotoAdded;
 use Modules\Equipments\Domain\Events\EquipmentPhotoRemoved;
@@ -46,6 +48,62 @@ class EquipmentProjector extends Projector
         ]);
 
         $this->syncAccessories($event->aggregateRootUuid(), $event->accessories);
+        $this->forgetCache();
+    }
+
+    /**
+     * Evento de OUTRO módulo (EquipmentModels), tratado aqui de propósito: Equipments pode conhecer
+     * o catálogo, nunca o contrário — e a classe de evento é justamente o contrato público que
+     * docs/architecture.md sanciona pra atravessar essa fronteira.
+     *
+     * É **projector e não reactor** porque isto é reconstrução de projeção, não efeito colateral
+     * externo: um replay precisa reaplicar o rename na ordem certa. Como o replay do spatie segue a
+     * ordem global de `stored_events.id`, o EquipmentRegistered antigo projeta o nome da época e
+     * este handler corrige em seguida — o estado final bate com o de produção.
+     *
+     * `order_equipments` NÃO é tocado: a OS guarda o snapshot do que foi atendido na época, e
+     * corrigir o catálogo hoje não reescreve histórico (ver api-conventions.md § Snapshot do
+     * equipamento na OS).
+     */
+    public function onEquipmentModelUpdated(EquipmentModelUpdated $event): void
+    {
+        $modelId = $event->aggregateRootUuid();
+
+        Equipment::where('equipment_model_id', $modelId)->update([
+            'name' => $event->name,
+            'brand' => $event->brand,
+            'model' => $event->model,
+        ]);
+
+        // Equipamentos legados (evento anterior ao api#101) não têm o vínculo gravado em evento
+        // nenhum: num replay ele é re-derivado pelo trio, e o rename acabaria de quebrar essa
+        // derivação. Alcançá-los pelo trio ANTERIOR — que o evento carrega justamente pra isso — é
+        // o que faz o replay terminar igual à produção, em vez de deixá-los sem modelo e com o
+        // texto antigo. Também aproveita pra gravar o vínculo que faltava.
+        if ($event->previousName !== null) {
+            Equipment::whereNull('equipment_model_id')
+                ->where('name', $event->previousName)
+                ->where(fn ($query) => $event->previousBrand === null ? $query->whereNull('brand') : $query->where('brand', $event->previousBrand))
+                ->where(fn ($query) => $event->previousModel === null ? $query->whereNull('model') : $query->where('model', $event->previousModel))
+                ->update([
+                    'equipment_model_id' => $modelId,
+                    'name' => $event->name,
+                    'brand' => $event->brand,
+                    'model' => $event->model,
+                ]);
+        }
+
+        $this->forgetCache();
+    }
+
+    /**
+     * Remover entrada do catálogo só passa quando nenhum equipamento a usa (a FK é
+     * restrictOnDelete), então aqui não há linha de `equipments` pra ajustar — mas a listagem
+     * cacheada pode ter sido montada antes, e nada garante que ela não mencione o modelo.
+     * Invalidar é barato; servir texto de um modelo que não existe mais, não.
+     */
+    public function onEquipmentModelRemoved(EquipmentModelRemoved $event): void
+    {
         $this->forgetCache();
     }
 

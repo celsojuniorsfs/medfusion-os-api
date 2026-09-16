@@ -15,6 +15,7 @@ use Modules\EquipmentModels\Infrastructure\ReadModels\EquipmentModel;
 use Modules\Equipments\Domain\EquipmentAggregate;
 use Modules\Equipments\Domain\Events\EquipmentRegistered;
 use Modules\Equipments\Infrastructure\Projectors\EquipmentProjector;
+use Modules\Equipments\Infrastructure\ReadModels\Equipment;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
 use Spatie\EventSourcing\Facades\Projectionist;
@@ -564,5 +565,151 @@ class EquipmentsHttpTest extends TestCase
         // Idempotente: rodar de novo não duplica nem re-liga nada.
         $this->artisan('equipment-models:backfill')->assertSuccessful();
         $this->assertEquals(1, EquipmentModel::count());
+    }
+
+    /**
+     * O backfill do api#101 comparava com `where('brand', null)`, que em SQL vira `brand = NULL` e
+     * nunca é verdadeiro — equipamento sem marca/modelo não era ligado a nada, e ainda sobrava a
+     * entrada de catálogo criada pra ele. Achado investigando o bug de produção do api#107.
+     */
+    public function test_backfill_links_equipments_without_brand_or_model(): void
+    {
+        $clientId = $this->aClientId();
+        $equipmentId = (string) Str::uuid();
+        EquipmentAggregate::retrieve($equipmentId)
+            ->register($clientId, 'Aparelho sem marca', null, null, null, null, [])
+            ->persist();
+
+        DB::table('equipments')->update(['equipment_model_id' => null]);
+
+        $this->artisan('equipment-models:backfill')->assertSuccessful();
+
+        $modelId = EquipmentModel::where('name', 'Aparelho sem marca')->value('id');
+        $this->assertNotNull($modelId);
+        $this->assertDatabaseHas('equipments', ['id' => $equipmentId, 'equipment_model_id' => $modelId]);
+
+        // Rodar de novo tem que achar a entrada existente (com marca/modelo nulos), não criar outra.
+        $this->artisan('equipment-models:backfill')->assertSuccessful();
+        $this->assertEquals(1, EquipmentModel::where('name', 'Aparelho sem marca')->count());
+    }
+
+    /**
+     * O bug de produção do api#107, reproduzido. Até o api#98, `accessories` era texto livre
+     * (`?string`) no evento; virou `array`. Os eventos gravados antes continuam no banco com uma
+     * string ali, e o construtor novo os rejeitava — `AggregateRoot::retrieve()` só roda no PUT e
+     * no DELETE, então esses equipamentos ficaram impossíveis de editar ou excluir, enquanto a
+     * listagem (que lê a projeção) seguia normal. Foi isso que escondeu o bug por dois dias.
+     *
+     * Verificado que o teste pega a regressão: com `array $accessories` puro no construtor, ele
+     * falha com InvalidStoredEvent — a mesma exceção que apareceu no log de produção.
+     */
+    public function test_updates_an_equipment_whose_event_was_stored_before_accessories_became_a_list(): void
+    {
+        $clientId = $this->aClientId();
+        $equipmentId = (string) Str::uuid();
+
+        DB::table('stored_events')->insert([
+            'aggregate_uuid' => $equipmentId,
+            'aggregate_version' => 1,
+            'event_version' => 1,
+            'event_class' => EquipmentRegistered::class,
+            // Formato pré-api#98: accessories como texto livre.
+            'event_properties' => json_encode([
+                'clientId' => $clientId,
+                'name' => 'Aparelho Antigo',
+                'brand' => 'Marca Antiga',
+                'model' => 'MA-1',
+                'serialNumber' => 'SN-ANTIGO',
+                'assetTag' => null,
+                'accessories' => 'cabo de força, pedal',
+            ]),
+            'meta_data' => json_encode(['aggregate-root-uuid' => $equipmentId, 'aggregate-root-version' => 1]),
+            'created_at' => now(),
+        ]);
+        Projectionist::replay(collect([app(EquipmentProjector::class)]));
+
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->putJson("/api/v1/clients/{$clientId}/equipments/{$equipmentId}", [
+                'name' => 'Aparelho Antigo',
+                'brand' => 'Marca Antiga',
+                'model' => 'MA-1',
+                'no_accessories' => false,
+                'accessories' => [['name' => 'Cabo de força', 'quantity' => 1]],
+            ]);
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data.accessories');
+        // O acessório novo grava normalmente; o texto livre antigo já não existia na projeção.
+        $this->assertDatabaseHas('equipment_accessories', ['equipment_id' => $equipmentId, 'quantity' => 1]);
+    }
+
+    /** Equipamentos ainda mais antigos podem ter `accessories` nulo no payload. */
+    public function test_updates_an_equipment_whose_event_has_null_accessories(): void
+    {
+        $clientId = $this->aClientId();
+        $equipmentId = (string) Str::uuid();
+
+        DB::table('stored_events')->insert([
+            'aggregate_uuid' => $equipmentId,
+            'aggregate_version' => 1,
+            'event_version' => 1,
+            'event_class' => EquipmentRegistered::class,
+            'event_properties' => json_encode([
+                'clientId' => $clientId,
+                'name' => 'Aparelho Antigo',
+                'brand' => 'Marca Antiga',
+                'model' => 'MA-1',
+                'serialNumber' => null,
+                'assetTag' => null,
+                'accessories' => null,
+            ]),
+            'meta_data' => json_encode(['aggregate-root-uuid' => $equipmentId, 'aggregate-root-version' => 1]),
+            'created_at' => now(),
+        ]);
+        Projectionist::replay(collect([app(EquipmentProjector::class)]));
+
+        $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->putJson("/api/v1/clients/{$clientId}/equipments/{$equipmentId}", [
+                'name' => 'Aparelho Antigo',
+                'brand' => 'Marca Antiga',
+                'model' => 'MA-1',
+                'no_accessories' => true,
+            ])
+            ->assertOk();
+    }
+
+    /** Um replay precisa atravessar um stream misto (evento velho + evento novo) sem estourar. */
+    public function test_replaying_a_stream_that_mixes_old_and_new_event_formats(): void
+    {
+        $clientId = $this->aClientId();
+        $equipmentId = (string) Str::uuid();
+
+        DB::table('stored_events')->insert([
+            'aggregate_uuid' => $equipmentId,
+            'aggregate_version' => 1,
+            'event_version' => 1,
+            'event_class' => EquipmentRegistered::class,
+            'event_properties' => json_encode([
+                'clientId' => $clientId,
+                'name' => 'Aparelho Antigo',
+                'brand' => 'Marca Antiga',
+                'model' => 'MA-1',
+                'serialNumber' => 'SN-ANTIGO',
+                'assetTag' => null,
+                'accessories' => 'texto livre',
+            ]),
+            'meta_data' => json_encode(['aggregate-root-uuid' => $equipmentId, 'aggregate-root-version' => 1]),
+            'created_at' => now(),
+        ]);
+
+        // Evento no formato de hoje, em cima do mesmo agregado.
+        EquipmentAggregate::retrieve($equipmentId)
+            ->update('Aparelho Renomeado', 'Marca Antiga', 'MA-1', 'SN-ANTIGO', null, [])
+            ->persist();
+
+        Equipment::query()->delete();
+        Projectionist::replay(collect([app(EquipmentProjector::class)]));
+
+        $this->assertDatabaseHas('equipments', ['id' => $equipmentId, 'name' => 'Aparelho Renomeado']);
     }
 }

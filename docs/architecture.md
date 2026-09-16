@@ -83,7 +83,7 @@ de negócio (ex.: `certificate_number`).
 | Clients | `ClientAggregate` | `ClientRegistered`, `ClientUpdated`, `ClientRemoved` |
 | Equipments | `EquipmentAggregate` | `EquipmentRegistered`, `EquipmentUpdated`, `EquipmentRemoved`, `EquipmentPhotoAdded`, `EquipmentPhotoRemoved` |
 | Orders | `OrderAggregate` | `OrderOpened`, `OrderEquipmentAttached`, `OrderItemAdded`, `OrderStatusChanged` |
-| Accessories | `AccessoryAggregate` | `AccessoryRegistered` |
+| Accessories | `AccessoryAggregate` | `AccessoryRegistered`, `AccessoryUpdated`, `AccessoryRemoved` |
 | EquipmentModels | `EquipmentModelAggregate` | `EquipmentModelRegistered`, `EquipmentModelUpdated`, `EquipmentModelRemoved` |
 
 Os dois últimos são os **catálogos globais**. Nasceram append-only (api#92/#101), e foi essa ausência

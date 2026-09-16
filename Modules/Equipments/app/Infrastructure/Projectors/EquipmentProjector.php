@@ -4,6 +4,8 @@ namespace Modules\Equipments\Infrastructure\Projectors;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use Modules\Accessories\Domain\Events\AccessoryRemoved;
+use Modules\Accessories\Domain\Events\AccessoryUpdated;
 use Modules\EquipmentModels\Domain\Events\EquipmentModelRemoved;
 use Modules\EquipmentModels\Domain\Events\EquipmentModelUpdated;
 use Modules\EquipmentModels\Infrastructure\ReadModels\EquipmentModel;
@@ -103,6 +105,21 @@ class EquipmentProjector extends Projector
      * Invalidar é barato; servir texto de um modelo que não existe mais, não.
      */
     public function onEquipmentModelRemoved(EquipmentModelRemoved $event): void
+    {
+        $this->forgetCache();
+    }
+
+    /**
+     * Acessório renomeado/removido não muda dado nenhum em `equipments` (o nome vem pela relação,
+     * não é copiado) — mas a listagem cacheada embute esse nome. Sem invalidar, ela serviria o nome
+     * antigo por até uma hora.
+     */
+    public function onAccessoryUpdated(AccessoryUpdated $event): void
+    {
+        $this->forgetCache();
+    }
+
+    public function onAccessoryRemoved(AccessoryRemoved $event): void
     {
         $this->forgetCache();
     }

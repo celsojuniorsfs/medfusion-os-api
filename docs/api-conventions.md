@@ -193,6 +193,11 @@ O catálogo é alimentado sozinho — todo equipamento salvo com marca/modelo di
   propósito à remoção de uma unidade física (o "cadastrou uma vez, usa em todos" que o cliente
   pediu), então ela só sai quando ninguém mais aponta pra ela.
 
+O catálogo de **acessórios** (`PUT|DELETE /accessories/{id}`) segue as mesmas duas regras, com uma
+diferença: corrigir o nome de um acessório **não precisa propagar nada** — ele nunca foi copiado,
+`equipment_accessories` guarda só o id e o nome vem pela relação. O que os dois casos têm em comum é
+invalidar a listagem de equipamentos, que embute esses textos no cache.
+
 ## Fotos do equipamento (api#102)
 
 Pedido do cliente: registrar "a forma com que a gente recebe o aparelho, e pra não ter divergência

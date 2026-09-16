@@ -540,6 +540,60 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /accessories/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [accessories]
+      summary: Corrige o nome de um acessório do catálogo
+      description: >
+        O nome corrigido aparece automaticamente em todo equipamento que usa o acessório — ele nunca
+        foi copiado, `equipment_accessories` guarda só o id (api#109).
+      operationId: updateAccessory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccessoryInput" }
+      responses:
+        "200":
+          description: Acessório atualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Accessory" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [accessories]
+      summary: Remove um acessório do catálogo
+      description: >
+        Recusado com 409 quando algum equipamento usa este acessório.
+      operationId: deleteAccessory
+      responses:
+        "204": { description: Removido }
+        "409":
+          description: Acessório em uso por equipamentos cadastrados
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /equipment-models/{id}:
     parameters:
       - name: id

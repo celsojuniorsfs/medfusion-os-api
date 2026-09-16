@@ -8,7 +8,6 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Modules\Accessories\Application\RegisterAccessory;
 use Modules\Clients\Infrastructure\ReadModels\Client;
-use Modules\EquipmentModels\Application\RegisterEquipmentModel;
 use Modules\EquipmentModels\Infrastructure\ReadModels\EquipmentModel;
 use Modules\Equipments\Application\RegisterEquipment;
 use Modules\Equipments\Application\RemoveEquipment;
@@ -59,17 +58,18 @@ class EquipmentController
         Client::findOrFail($id);
 
         $data = $request->validated();
+        $model = EquipmentModel::findOrFail($data['equipment_model_id']);
 
-        $equipment = DB::transaction(function () use ($id, $data, $registerEquipment) {
+        $equipment = DB::transaction(function () use ($id, $data, $model, $registerEquipment) {
             return $registerEquipment(
                 $id,
-                $data['name'],
-                $data['brand'],
-                $data['model'],
+                $model->name,
+                $model->brand,
+                $model->model,
                 $data['serial_number'] ?? null,
                 $data['asset_tag'] ?? null,
                 $this->resolveAccessories($data),
-                $this->resolveEquipmentModel($data),
+                $model->id,
             );
         });
 
@@ -85,17 +85,21 @@ class EquipmentController
         Equipment::where('client_id', $id)->findOrFail($equipmentId);
 
         $data = $request->validated();
+        $model = EquipmentModel::findOrFail($data['equipment_model_id']);
 
-        $equipment = DB::transaction(function () use ($equipmentId, $data, $updateEquipment) {
+        // A mesma validação vale pra equipamento legado sem vínculo (equipment_model_id null desde
+        // sempre): editar exige escolher um modelo agora, migrando-o na hora — sem precisar de um
+        // comando de migração em lote.
+        $equipment = DB::transaction(function () use ($equipmentId, $data, $model, $updateEquipment) {
             return $updateEquipment(
                 $equipmentId,
-                $data['name'],
-                $data['brand'],
-                $data['model'],
+                $model->name,
+                $model->brand,
+                $model->model,
                 $data['serial_number'] ?? null,
                 $data['asset_tag'] ?? null,
                 $this->resolveAccessories($data),
-                $this->resolveEquipmentModel($data),
+                $model->id,
             );
         });
 
@@ -109,40 +113,6 @@ class EquipmentController
         $removeEquipment($equipmentId);
 
         return response()->noContent();
-    }
-
-    /**
-     * Resolve o modelo do catálogo global (api#101), mesma composição entre módulos via
-     * Presentation que resolveAccessories já faz. Três caminhos, nesta ordem:
-     *
-     * 1. `equipment_model_id` recebido — o técnico escolheu um modelo do catálogo no seletor;
-     * 2. senão, procura pelo trio exato (nome+marca+modelo) — cobre o cadastro digitado na mão
-     *    que casa com uma entrada existente, e é o que segura a poluição do catálogo por
-     *    duplicata sem precisar de constraint `unique` (que foi descartada de propósito);
-     * 3. senão, cadastra a entrada nova no catálogo na hora.
-     *
-     * Sempre devolve um id: todo equipamento cadastrado daqui pra frente fica ligado ao catálogo.
-     * Chamado dentro da DB::transaction de store/update — se algo falhar no meio, nenhum modelo
-     * novo fica cadastrado pela metade.
-     *
-     * @param  array<string, mixed>  $data  validated() do EquipmentRequest
-     */
-    private function resolveEquipmentModel(array $data): string
-    {
-        if (! empty($data['equipment_model_id'])) {
-            return $data['equipment_model_id'];
-        }
-
-        // Marca/modelo nunca chegam nulos aqui (EquipmentRequest exige os três), mas a comparação
-        // trata nulo do mesmo jeito que o EquipmentProjector — `where('brand', null)` vira
-        // `brand = NULL` em SQL e nunca casa, e essa pegadinha não deve depender de a validação
-        // continuar como está.
-        $existing = EquipmentModel::where('name', $data['name'])
-            ->where(fn ($query) => $data['brand'] === null ? $query->whereNull('brand') : $query->where('brand', $data['brand']))
-            ->where(fn ($query) => $data['model'] === null ? $query->whereNull('model') : $query->where('model', $data['model']))
-            ->value('id');
-
-        return $existing ?? app(RegisterEquipmentModel::class)($data['name'], $data['brand'], $data['model'])->id;
     }
 
     /**

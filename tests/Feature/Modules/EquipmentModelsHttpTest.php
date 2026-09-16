@@ -154,17 +154,14 @@ class EquipmentModelsHttpTest extends TestCase
     {
         $clientId = $this->aClientId();
         $user = $this->authenticatedUser();
+        $modelId = $this->anEquipmentModelId('Ultrassom', 'Sonopus', 'XYZ-100');
 
         $this->actingAs($user, 'sanctum')
             ->postJson("/api/v1/clients/{$clientId}/equipments", [
-                'name' => 'Ultrassom',
-                'brand' => 'Sonopus',
-                'model' => 'XYZ-100',
+                'equipment_model_id' => $modelId,
                 'no_accessories' => true,
             ])
             ->assertCreated();
-
-        $modelId = EquipmentModel::where('name', 'Ultrassom')->value('id');
 
         $response = $this->actingAs($user, 'sanctum')
             ->deleteJson("/api/v1/equipment-models/{$modelId}");

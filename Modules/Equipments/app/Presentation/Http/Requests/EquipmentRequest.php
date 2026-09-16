@@ -27,24 +27,22 @@ class EquipmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // Obrigatórios desde api#92 — antes só name era obrigatório. Achado da issue: o
-            // técnico às vezes coloca uma marca no campo de equipamento por falta de organização.
-            'name' => ['required', 'string', 'max:255'],
-            'brand' => ['required', 'string', 'max:255'],
-            'model' => ['required', 'string', 'max:255'],
             // Sem Rule::unique aqui de propósito: serial_number repetido no mesmo cliente não é
             // bloqueado pela API (ver Equipment no openapi.yaml) — o aviso ao técnico é
             // responsabilidade do frontend, comparando contra a lista já carregada do cliente.
             'serial_number' => ['nullable', 'string', 'max:255'],
             'asset_tag' => ['nullable', 'string', 'max:255'],
 
-            // Entrada do catálogo global de modelos (api#101), opcional: quando o técnico escolhe
-            // um modelo no seletor, o front manda o id junto do trio acima. Quando não manda, o
-            // controller procura pelo trio e cadastra a entrada nova se não existir — ou seja,
-            // name/brand/model continuam obrigatórios de qualquer jeito, e são eles que definem o
-            // modelo quando ele ainda não está no catálogo (ver
-            // EquipmentController::resolveEquipmentModel).
-            'equipment_model_id' => ['nullable', 'uuid', 'exists:equipment_models,id'],
+            // Obrigatório desde o api#112 — fecha a causa-raiz da issue #110: até aqui,
+            // name/brand/model chegavam como texto livre e o EquipmentController cadastrava uma
+            // entrada no catálogo global sozinho quando não achava uma igual, então erro de
+            // digitação e dado de teste entravam pra sempre sem ninguém pedir. Exigir o id aqui
+            // significa que a ÚNICA porta de entrada do catálogo passa a ser a tela dedicada
+            // (POST /equipment-models) — este endpoint só referencia, nunca mais cria.
+            //
+            // name/brand/model NÃO aparecem mais aqui: o front não manda mais texto livre (só
+            // seleciona), e o controller lê o trio do EquipmentModel encontrado, não do payload.
+            'equipment_model_id' => ['required', 'uuid', 'exists:equipment_models,id'],
 
             'no_accessories' => ['required', 'boolean'],
             'accessories' => ['array'],

@@ -10,6 +10,7 @@ use Modules\Accessories\Domain\Events\AccessoryRemoved;
 use Modules\Accessories\Infrastructure\ReadModels\Accessory;
 use Modules\Clients\Domain\ClientAggregate;
 use Modules\Clients\Domain\Enums\PersonType;
+use Modules\EquipmentModels\Domain\EquipmentModelAggregate;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
 use Tests\TestCase;
@@ -42,6 +43,14 @@ class AccessoriesHttpTest extends TestCase
         ClientAggregate::retrieve($uuid)
             ->register(PersonType::Company, 'Hospital São Lucas', '31233218000110', null, null, null, null, null, null, null, null, null, null)
             ->persist();
+
+        return $uuid;
+    }
+
+    private function anEquipmentModelId(string $name = 'Bisturi', ?string $brand = 'Marca X', ?string $model = 'Modelo X'): string
+    {
+        $uuid = (string) Str::uuid();
+        EquipmentModelAggregate::retrieve($uuid)->register($name, $brand, $model)->persist();
 
         return $uuid;
     }
@@ -136,9 +145,7 @@ class AccessoriesHttpTest extends TestCase
 
         $this->actingAs($user, 'sanctum')
             ->postJson("/api/v1/clients/{$clientId}/equipments", [
-                'name' => 'Bisturi',
-                'brand' => 'Marca X',
-                'model' => 'Modelo X',
+                'equipment_model_id' => $this->anEquipmentModelId(),
                 'no_accessories' => false,
                 'accessories' => [['name' => 'Cabo de força', 'quantity' => 1]],
             ])

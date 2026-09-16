@@ -178,6 +178,20 @@ Dois detalhes do pacote que economizam tempo ao escrever um teste de replay:
   `TypeError`.
 - Reprojetar no teste: `Projectionist::replay(collect([app(SeuProjector::class)]))`.
 
+## "Fecha #N" em português NÃO fecha a issue
+
+O corpo das PRs aqui é escrito em português, e escrever "Fecha #101" **não fecha nada**: o GitHub só
+reconhece palavra-chave de fechamento em inglês (`close`/`closes`/`closed`, `fix`/`fixes`/`fixed`,
+`resolve`/`resolves`/`resolved`). Em português ele trata como texto comum e a issue fica aberta
+para sempre, mesmo com a PR mergeada.
+
+Isso já aconteceu com #92, #101 e #102 (e com web#87, #92, #93) — todas entregues e esquecidas
+abertas, dando a impressão de backlog pendente que não existe.
+
+Duas saídas, escolha uma e seja consistente: escrever `Closes #101` no corpo da PR (mistura idioma,
+mas fecha sozinho), ou manter o português e **fechar a issue à mão depois do merge**, com um
+comentário dizendo qual PR entregou. O que não vale é escrever "Fecha #N" e achar que resolveu.
+
 ## Antes de assumir o estado de uma PR/issue
 
 Não confie em contexto de sessão anterior (resumo de conversa, plano salvo) para saber se uma PR

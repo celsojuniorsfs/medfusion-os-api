@@ -5,7 +5,10 @@ namespace Tests\Feature\Modules;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Modules\Clients\Domain\ClientAggregate;
+use Modules\Clients\Domain\Enums\PersonType;
 use Modules\EquipmentModels\Domain\EquipmentModelAggregate;
+use Modules\EquipmentModels\Domain\Events\EquipmentModelRemoved;
 use Modules\EquipmentModels\Infrastructure\ReadModels\EquipmentModel;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
@@ -29,6 +32,16 @@ class EquipmentModelsHttpTest extends TestCase
     {
         $uuid = (string) Str::uuid();
         EquipmentModelAggregate::retrieve($uuid)->register($name, $brand, $model)->persist();
+
+        return $uuid;
+    }
+
+    private function aClientId(): string
+    {
+        $uuid = (string) Str::uuid();
+        ClientAggregate::retrieve($uuid)
+            ->register(PersonType::Company, 'Hospital São Lucas', '31233218000110', null, null, null, null, null, null, null, null, null, null)
+            ->persist();
 
         return $uuid;
     }
@@ -89,6 +102,83 @@ class EquipmentModelsHttpTest extends TestCase
 
         $response->assertStatus(422);
         $response->assertJsonValidationErrors(['name', 'brand', 'model']);
+    }
+
+    public function test_updates_an_equipment_model(): void
+    {
+        $modelId = $this->anEquipmentModelId('Utrassom', 'Sonopus', 'XYZ-100');
+
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->putJson("/api/v1/equipment-models/{$modelId}", [
+                'name' => 'Ultrassom',
+                'brand' => 'Sonopus',
+                'model' => 'XYZ-100',
+            ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('data.name', 'Ultrassom');
+        $this->assertDatabaseHas('equipment_models', ['id' => $modelId, 'name' => 'Ultrassom']);
+    }
+
+    public function test_returns_404_when_updating_an_unknown_equipment_model(): void
+    {
+        $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->putJson('/api/v1/equipment-models/'.Str::uuid(), [
+                'name' => 'Ultrassom',
+                'brand' => 'Sonopus',
+                'model' => 'XYZ-100',
+            ])
+            ->assertStatus(404);
+    }
+
+    public function test_removes_an_equipment_model_that_is_not_in_use(): void
+    {
+        $modelId = $this->anEquipmentModelId('Modelo de teste');
+
+        $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->deleteJson("/api/v1/equipment-models/{$modelId}")
+            ->assertNoContent();
+
+        $this->assertDatabaseMissing('equipment_models', ['id' => $modelId]);
+    }
+
+    /**
+     * O caso que motivou o api#109: o usuário removeu um equipamento de teste e o modelo dele ficou
+     * pra sempre no seletor. Agora dá pra remover — mas só quando ninguém usa.
+     *
+     * A recusa vem da FK `equipments.equipment_model_id` (restrictOnDelete), traduzida em 409 pelo
+     * controller: este módulo não pode consultar Equipments pra saber a resposta (ver CLAUDE.md §
+     * grafo de dependências).
+     */
+    public function test_refuses_to_remove_an_equipment_model_in_use(): void
+    {
+        $clientId = $this->aClientId();
+        $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson("/api/v1/clients/{$clientId}/equipments", [
+                'name' => 'Ultrassom',
+                'brand' => 'Sonopus',
+                'model' => 'XYZ-100',
+                'no_accessories' => true,
+            ])
+            ->assertCreated();
+
+        $modelId = EquipmentModel::where('name', 'Ultrassom')->value('id');
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->deleteJson("/api/v1/equipment-models/{$modelId}");
+
+        $response->assertStatus(409);
+        $response->assertJsonPath('message', 'Este modelo está em uso por equipamentos cadastrados e não pode ser removido.');
+        $this->assertDatabaseHas('equipment_models', ['id' => $modelId]);
+
+        // O teste que mata a primeira versão desta implementação: eu tinha escrito a recusa como
+        // "tenta remover e traduz o erro de FK em 409". Só que persist() grava o evento ANTES de o
+        // projector rodar e a FK estourar — o modelo continuava na tabela, mas com um
+        // EquipmentModelRemoved gravado, então o agregado se achava removido e um replay apagaria
+        // um modelo que a produção ainda tem. Recusar antes de chamar a Action é o que evita isso.
+        $this->assertDatabaseMissing('stored_events', ['event_class' => EquipmentModelRemoved::class]);
     }
 
     public function test_accepts_a_duplicate_model(): void

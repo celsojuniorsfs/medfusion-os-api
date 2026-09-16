@@ -78,9 +78,17 @@ Equipments  ← lido por: Orders (OrderEquipment, e uma FK de verdade no banco)
 Orders      ← não é lido por nenhum outro módulo — fica no topo da pilha
 ```
 
-`Clients`, `Identity` e `Accessories` nunca devem importar nada de `Equipments`/`Orders`/um dos
-outros — são a base do grafo. Se um dia um desses precisar importar algo de um módulo "de cima", pare e
-reconsidere — é sinal de que a dependência foi modelada ao contrário.
+`Clients`, `Identity`, `Accessories` e `EquipmentModels` são a base do grafo. **No `Domain` e no
+`Application` deles, nunca importe nada de um módulo "de cima"** (`Equipments`/`Orders`) — é o que o
+`ModuleBoundariesTest` trava, e se você precisar disso, pare: é sinal de que a dependência foi
+modelada ao contrário.
+
+**Na `Presentation`, compor leitura para cima é permitido e já é praticado** — não confunda as duas
+coisas (esta frase já esteve absoluta aqui e contradizia o próprio código). `ClientController`, de
+um módulo base, importa `Modules\Orders\...\Order`, `Modules\Equipments\...\Equipment` e
+`RemoveEquipment`: é assim que ele devolve 409 quando o cliente tem OS vinculada. `EquipmentModels`
+faz o mesmo no api#109 pra recusar a remoção de um modelo em uso. A regra real: **a decisão de
+negócio composta entre módulos mora na Presentation, nunca na Action.**
 
 Três coisas que a auditoria descobriu e valem a pena lembrar ao mexer nesse grafo (ex.: ao
 construir o CRUD de OS, api#45/#46, que vai fazer Orders crescer bastante):
@@ -210,6 +218,20 @@ abertas, dando a impressão de backlog pendente que não existe.
 Duas saídas, escolha uma e seja consistente: escrever `Closes #101` no corpo da PR (mistura idioma,
 mas fecha sozinho), ou manter o português e **fechar a issue à mão depois do merge**, com um
 comentário dizendo qual PR entregou. O que não vale é escrever "Fecha #N" e achar que resolveu.
+
+## Recusar uma remoção: cheque ANTES, nunca pelo erro do banco
+
+Tentador: chamar a Action de remoção e traduzir a violação de chave estrangeira em 409. **Não
+funciona**, e o motivo é do Event Sourcing, não do banco — verificado na marra no api#109:
+`persist()` grava o evento em `stored_events` e **só então** roda o projector, onde a FK estoura. O
+resultado de uma remoção "recusada" assim é um `...Removed` gravado com a linha ainda existindo: o
+agregado passa a se achar removido, e um replay apaga um registro que a produção tem.
+
+Cheque antes de chamar a Action (`Equipment::where(...)->exists()` na Presentation) e devolva 409
+ali. A FK `restrictOnDelete` continua valendo como rede de segurança pra corrida entre requisições.
+
+O teste que trava isso não é o status 409 — é
+`assertDatabaseMissing('stored_events', ['event_class' => ...Removed::class])` depois da recusa.
 
 ## Antes de assumir o estado de uma PR/issue
 

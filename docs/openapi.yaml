@@ -540,6 +540,62 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /equipment-models/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [equipment-models]
+      summary: Corrige uma entrada do catálogo de modelos
+      description: >
+        Corrigir aqui **também corrige os equipamentos** que apontam para esta entrada (o nome/marca/
+        modelo que cada um guarda como cópia). OS já emitidas não mudam: guardam o snapshot do que
+        foi atendido na época (ver api-conventions.md § Snapshot do equipamento na OS).
+      operationId: updateEquipmentModel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EquipmentModelInput" }
+      responses:
+        "200":
+          description: Modelo atualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/EquipmentModel" }
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    delete:
+      tags: [equipment-models]
+      summary: Remove uma entrada do catálogo de modelos
+      description: >
+        Recusado com 409 quando algum equipamento usa este modelo — a entrada do catálogo sobrevive
+        de propósito à remoção de uma unidade física, então só sai quando ninguém mais aponta pra ela.
+      operationId: deleteEquipmentModel
+      responses:
+        "204": { description: Removido }
+        "409":
+          description: Modelo em uso por equipamentos cadastrados
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /orders:
     get:
       tags: [orders]

@@ -8,8 +8,9 @@ use Modules\Equipments\Domain\Events\EquipmentUpdated;
 use Spatie\EventSourcing\AggregateRoots\AggregateRoot;
 
 /**
- * clientId referencia o ClientAggregate só pelo uuid — Equipments nunca importa nada de
- * Modules\Clients\Domain (regra de fronteira entre módulos, ver architecture.md).
+ * clientId e equipmentModelId referenciam agregados de outros módulos só pelo uuid — Equipments
+ * nunca importa nada de Modules\Clients\Domain nem de Modules\EquipmentModels\Domain (regra de
+ * fronteira entre módulos, ver architecture.md).
  */
 class EquipmentAggregate extends AggregateRoot
 {
@@ -26,9 +27,10 @@ class EquipmentAggregate extends AggregateRoot
         ?string $serialNumber,
         ?string $assetTag,
         array $accessories,
+        ?string $equipmentModelId = null,
     ): self {
         $this->recordThat(new EquipmentRegistered(
-            $clientId, $name, $brand, $model, $serialNumber, $assetTag, $accessories,
+            $clientId, $name, $brand, $model, $serialNumber, $assetTag, $accessories, $equipmentModelId,
         ));
 
         return $this;
@@ -44,9 +46,10 @@ class EquipmentAggregate extends AggregateRoot
         ?string $serialNumber,
         ?string $assetTag,
         array $accessories,
+        ?string $equipmentModelId = null,
     ): self {
         $this->recordThat(new EquipmentUpdated(
-            $name, $brand, $model, $serialNumber, $assetTag, $accessories,
+            $name, $brand, $model, $serialNumber, $assetTag, $accessories, $equipmentModelId,
         ));
 
         return $this;

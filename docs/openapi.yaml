@@ -886,10 +886,16 @@ components:
       properties:
         id: { type: string, format: uuid }
         client_id: { type: string, format: uuid }
+        equipment_model_id:
+          {
+            type: ["string", "null"],
+            format: uuid,
+            description: "Entrada do catálogo global de modelos (api#101). Null só em equipamentos cadastrados antes do api#101 cujo nome/marca/modelo não casou com nenhuma entrada do catálogo — os três campos abaixo continuam preenchidos de qualquer forma",
+          }
         name:
           {
             type: string,
-            description: "Nome/tipo do equipamento, ex.: Bisturi",
+            description: "Nome/tipo do equipamento, ex.: Bisturi. Cópia do catálogo (ver equipment_model_id) — ver api-conventions.md § Catálogo global de modelos de equipamento para por que a cópia existe",
           }
         brand:
           {
@@ -922,6 +928,14 @@ components:
         name: { type: string }
         brand: { type: string }
         model: { type: string }
+        equipment_model_id:
+          type: ["string", "null"]
+          format: uuid
+          description: >
+            Entrada do catálogo global de modelos escolhida no seletor (api#101). Opcional: quando
+            vem, name/brand/model devem ser os da entrada escolhida; quando não vem, a API procura
+            uma entrada com esse mesmo trio e, se não existir, cadastra uma nova no catálogo. Ou
+            seja, todo equipamento acaba ligado ao catálogo de um jeito ou de outro.
         serial_number: { type: ["string", "null"] }
         asset_tag: { type: ["string", "null"] }
         no_accessories:

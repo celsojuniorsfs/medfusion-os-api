@@ -143,6 +143,33 @@ restrição). Doeu para descobrir porque:
   resolve tudo recursivamente pra array puro, Resources/Collections aninhados incluídos) em vez
   de confiar em `->toArray()` puro quando o Resource tem qualquer campo composto.
 
+## Acrescentar campo a um evento já gravado: o que importa é ser nullable, não o default
+
+Ao adicionar um parâmetro novo a uma classe `ShouldBeStored` que já tem eventos no banco
+(`stored_events`), o payload antigo não tem essa chave. O que mantém esses eventos
+desserializáveis num `event-sourcing:replay` é o parâmetro ser **nullable** (`?string $x`) — não o
+valor default. Confirmado empiricamente em 15/09/2026 no api#101, rodando o teste de replay com
+cada variação:
+
+| Assinatura | Replay de evento antigo |
+|---|---|
+| `?string $x = null` | funciona |
+| `?string $x` (sem default) | **funciona** — o default não é o que importa aqui |
+| `string $x` (não-nullable) | quebra com `InvalidStoredEvent` |
+
+O default `= null` continua útil, mas por outro motivo: os chamadores PHP que não passam o
+parâmetro (ex.: `OrderController` cadastrando equipamento implicitamente pela tela de OS). Não
+confunda os dois — e coloque o parâmetro novo **por último**, porque as chamadas existentes são
+posicionais.
+
+Dois detalhes do pacote que economizam tempo ao escrever um teste de replay:
+
+- O uuid do agregado **não** vem da coluna `aggregate_uuid`: `ShouldBeStored::aggregateRootUuid()`
+  lê `metaData['aggregate-root-uuid']` (ver `Spatie\EventSourcing\Enums\MetaData`). Inserir um
+  `stored_events` na mão com `meta_data` vazio faz o projector receber `null` e estourar
+  `TypeError`.
+- Reprojetar no teste: `Projectionist::replay(collect([app(SeuProjector::class)]))`.
+
 ## Antes de assumir o estado de uma PR/issue
 
 Não confie em contexto de sessão anterior (resumo de conversa, plano salvo) para saber se uma PR

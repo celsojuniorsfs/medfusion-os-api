@@ -4,6 +4,7 @@ namespace Modules\Equipments\Infrastructure\Projectors;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use Modules\EquipmentModels\Infrastructure\ReadModels\EquipmentModel;
 use Modules\Equipments\Domain\Events\EquipmentRegistered;
 use Modules\Equipments\Domain\Events\EquipmentRemoved;
 use Modules\Equipments\Domain\Events\EquipmentUpdated;
@@ -18,6 +19,7 @@ class EquipmentProjector extends Projector
         Equipment::create([
             'id' => $event->aggregateRootUuid(),
             'client_id' => $event->clientId,
+            'equipment_model_id' => $this->resolveEquipmentModelId($event->equipmentModelId, $event->name, $event->brand, $event->model),
             'name' => $event->name,
             'brand' => $event->brand,
             'model' => $event->model,
@@ -32,6 +34,7 @@ class EquipmentProjector extends Projector
     public function onEquipmentUpdated(EquipmentUpdated $event): void
     {
         Equipment::whereKey($event->aggregateRootUuid())->update([
+            'equipment_model_id' => $this->resolveEquipmentModelId($event->equipmentModelId, $event->name, $event->brand, $event->model),
             'name' => $event->name,
             'brand' => $event->brand,
             'model' => $event->model,
@@ -51,6 +54,28 @@ class EquipmentProjector extends Projector
         Equipment::whereKey($event->aggregateRootUuid())->delete();
 
         $this->forgetCache();
+    }
+
+    /**
+     * Eventos gravados antes do api#101 não têm `equipmentModelId` (o parâmetro tem default no
+     * construtor justamente pra eles continuarem desserializando) — nesses casos procura a entrada
+     * do catálogo pelo trio que o evento carrega. É uma busca **somente leitura**: o projector
+     * nunca cadastra modelo. Criar entrada de catálogo aqui significaria gravar evento durante um
+     * `event-sourcing:replay` — escrever no event store enquanto ele é relido, não determinístico
+     * e crescendo a cada replay. Não achar é um resultado legítimo: `null` quer dizer "modelo
+     * desconhecido" pra aquele equipamento antigo, e o nome/marca/modelo dele continuam intactos
+     * nas colunas próprias.
+     */
+    private function resolveEquipmentModelId(?string $equipmentModelId, string $name, ?string $brand, ?string $model): ?string
+    {
+        if ($equipmentModelId !== null) {
+            return $equipmentModelId;
+        }
+
+        return EquipmentModel::where('name', $name)
+            ->where('brand', $brand)
+            ->where('model', $model)
+            ->value('id');
     }
 
     /**

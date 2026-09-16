@@ -19,9 +19,10 @@ class UpdateEquipment
         ?string $serialNumber = null,
         ?string $assetTag = null,
         array $accessories = [],
+        ?string $equipmentModelId = null,
     ): Equipment {
         EquipmentAggregate::retrieve($id)
-            ->update($name, $brand, $model, $serialNumber, $assetTag, $accessories)
+            ->update($name, $brand, $model, $serialNumber, $assetTag, $accessories, $equipmentModelId)
             ->persist();
 
         return Equipment::findOrFail($id);

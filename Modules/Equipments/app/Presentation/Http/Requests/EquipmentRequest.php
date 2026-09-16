@@ -38,6 +38,14 @@ class EquipmentRequest extends FormRequest
             'serial_number' => ['nullable', 'string', 'max:255'],
             'asset_tag' => ['nullable', 'string', 'max:255'],
 
+            // Entrada do catálogo global de modelos (api#101), opcional: quando o técnico escolhe
+            // um modelo no seletor, o front manda o id junto do trio acima. Quando não manda, o
+            // controller procura pelo trio e cadastra a entrada nova se não existir — ou seja,
+            // name/brand/model continuam obrigatórios de qualquer jeito, e são eles que definem o
+            // modelo quando ele ainda não está no catálogo (ver
+            // EquipmentController::resolveEquipmentModel).
+            'equipment_model_id' => ['nullable', 'uuid', 'exists:equipment_models,id'],
+
             'no_accessories' => ['required', 'boolean'],
             'accessories' => ['array'],
             'accessories.*.accessory_id' => ['nullable', 'uuid', 'exists:accessories,id'],

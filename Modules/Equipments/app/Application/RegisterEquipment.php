@@ -22,11 +22,12 @@ class RegisterEquipment
         ?string $serialNumber = null,
         ?string $assetTag = null,
         array $accessories = [],
+        ?string $equipmentModelId = null,
     ): Equipment {
         $uuid = (string) Str::uuid();
 
         EquipmentAggregate::retrieve($uuid)
-            ->register($clientId, $name, $brand, $model, $serialNumber, $assetTag, $accessories)
+            ->register($clientId, $name, $brand, $model, $serialNumber, $assetTag, $accessories, $equipmentModelId)
             ->persist();
 
         return Equipment::findOrFail($uuid);

@@ -19,6 +19,12 @@ class EquipmentResource extends JsonResource
         return [
             'id' => $this->id,
             'client_id' => $this->client_id,
+            // Só o id do modelo, sem objeto aninhado do catálogo: name/brand/model já vão planos
+            // logo abaixo (são o snapshot da entrada escolhida), e o frontend só precisa do id pra
+            // pré-selecionar o modelo no formulário. Acrescentar um objeto aqui significaria mais
+            // um objeto dentro de um payload que vai pro cache — exatamente a classe de bug do
+            // api#99 (ver CLAUDE.md § Cache).
+            'equipment_model_id' => $this->equipment_model_id,
             'name' => $this->name,
             'brand' => $this->brand,
             'model' => $this->model,

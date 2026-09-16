@@ -143,6 +143,41 @@ restrição). Doeu para descobrir porque:
   resolve tudo recursivamente pra array puro, Resources/Collections aninhados incluídos) em vez
   de confiar em `->toArray()` puro quando o Resource tem qualquer campo composto.
 
+## Acrescentar campo a um evento já gravado: precisa de default OU de nulabilidade
+
+Ao adicionar um parâmetro novo a uma classe `ShouldBeStored` que já tem eventos no banco
+(`stored_events`), o payload antigo não tem essa chave. O construtor precisa conseguir produzir um
+valor mesmo assim — e para isso **um default OU o tipo ser nullable já basta**; o que quebra é não
+ter nenhum dos dois. Matriz confirmada empiricamente em 15/09/2026 no api#101, rodando o teste de
+replay com cada variação:
+
+| Assinatura | Replay de evento antigo |
+|---|---|
+| `?string $x = null` | funciona |
+| `?string $x` (nullable, sem default) | funciona |
+| `string $x = 'algo'` (não-nullable, com default) | desserializa (usa o default) |
+| `string $x` (não-nullable, sem default) | quebra com `InvalidStoredEvent` |
+
+Ou seja: não basta olhar só pro default nem só pro `?`. Na prática, **prefira `?tipo $x = null`**
+nos dois papéis ao mesmo tempo — e entenda que `null` normalmente significa "desconhecido naquele
+evento", não "vazio de propósito"; quem decide o que fazer com isso é o projector (no api#101 ele
+resolve o modelo pelo trio nome/marca/modelo).
+
+Um cuidado à parte do default: um valor que desserializa não é necessariamente um valor **válido**.
+No teste acima, `string $x = 'algo'` passou pela desserialização e só estourou depois, no `INSERT`,
+por não ser um uuid existente na FK. Se o campo novo é uma chave estrangeira, `null` é o único
+default honesto.
+
+Coloque o parâmetro novo **por último**, porque as chamadas existentes são posicionais.
+
+Dois detalhes do pacote que economizam tempo ao escrever um teste de replay:
+
+- O uuid do agregado **não** vem da coluna `aggregate_uuid`: `ShouldBeStored::aggregateRootUuid()`
+  lê `metaData['aggregate-root-uuid']` (ver `Spatie\EventSourcing\Enums\MetaData`). Inserir um
+  `stored_events` na mão com `meta_data` vazio faz o projector receber `null` e estourar
+  `TypeError`.
+- Reprojetar no teste: `Projectionist::replay(collect([app(SeuProjector::class)]))`.
+
 ## Antes de assumir o estado de uma PR/issue
 
 Não confie em contexto de sessão anterior (resumo de conversa, plano salvo) para saber se uma PR

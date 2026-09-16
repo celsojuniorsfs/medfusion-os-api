@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Modules\Accessories\Application\RegisterAccessory;
 use Modules\Clients\Infrastructure\ReadModels\Client;
+use Modules\EquipmentModels\Application\RegisterEquipmentModel;
+use Modules\EquipmentModels\Infrastructure\ReadModels\EquipmentModel;
 use Modules\Equipments\Application\RegisterEquipment;
 use Modules\Equipments\Application\RemoveEquipment;
 use Modules\Equipments\Application\UpdateEquipment;
@@ -67,6 +69,7 @@ class EquipmentController
                 $data['serial_number'] ?? null,
                 $data['asset_tag'] ?? null,
                 $this->resolveAccessories($data),
+                $this->resolveEquipmentModel($data),
             );
         });
 
@@ -92,6 +95,7 @@ class EquipmentController
                 $data['serial_number'] ?? null,
                 $data['asset_tag'] ?? null,
                 $this->resolveAccessories($data),
+                $this->resolveEquipmentModel($data),
             );
         });
 
@@ -105,6 +109,36 @@ class EquipmentController
         $removeEquipment($equipmentId);
 
         return response()->noContent();
+    }
+
+    /**
+     * Resolve o modelo do catálogo global (api#101), mesma composição entre módulos via
+     * Presentation que resolveAccessories já faz. Três caminhos, nesta ordem:
+     *
+     * 1. `equipment_model_id` recebido — o técnico escolheu um modelo do catálogo no seletor;
+     * 2. senão, procura pelo trio exato (nome+marca+modelo) — cobre o cadastro digitado na mão
+     *    que casa com uma entrada existente, e é o que segura a poluição do catálogo por
+     *    duplicata sem precisar de constraint `unique` (que foi descartada de propósito);
+     * 3. senão, cadastra a entrada nova no catálogo na hora.
+     *
+     * Sempre devolve um id: todo equipamento cadastrado daqui pra frente fica ligado ao catálogo.
+     * Chamado dentro da DB::transaction de store/update — se algo falhar no meio, nenhum modelo
+     * novo fica cadastrado pela metade.
+     *
+     * @param  array<string, mixed>  $data  validated() do EquipmentRequest
+     */
+    private function resolveEquipmentModel(array $data): string
+    {
+        if (! empty($data['equipment_model_id'])) {
+            return $data['equipment_model_id'];
+        }
+
+        $existing = EquipmentModel::where('name', $data['name'])
+            ->where('brand', $data['brand'])
+            ->where('model', $data['model'])
+            ->value('id');
+
+        return $existing ?? app(RegisterEquipmentModel::class)($data['name'], $data['brand'], $data['model'])->id;
     }
 
     /**

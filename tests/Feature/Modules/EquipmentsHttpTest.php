@@ -570,7 +570,7 @@ class EquipmentsHttpTest extends TestCase
     /**
      * O backfill do api#101 comparava com `where('brand', null)`, que em SQL vira `brand = NULL` e
      * nunca é verdadeiro — equipamento sem marca/modelo não era ligado a nada, e ainda sobrava a
-     * entrada de catálogo criada pra ele. Achado investigando o bug de produção do api#107.
+     * entrada de catálogo criada pra ele. Achado investigando o bug de produção do api#108.
      */
     public function test_backfill_links_equipments_without_brand_or_model(): void
     {
@@ -594,7 +594,7 @@ class EquipmentsHttpTest extends TestCase
     }
 
     /**
-     * O bug de produção do api#107, reproduzido. Até o api#98, `accessories` era texto livre
+     * O bug de produção do api#108, reproduzido. Até o api#98, `accessories` era texto livre
      * (`?string`) no evento; virou `array`. Os eventos gravados antes continuam no banco com uma
      * string ali, e o construtor novo os rejeitava — `AggregateRoot::retrieve()` só roda no PUT e
      * no DELETE, então esses equipamentos ficaram impossíveis de editar ou excluir, enquanto a

@@ -172,7 +172,7 @@ Coloque o parâmetro novo **por último**, porque as chamadas existentes são po
 
 ### E **mudar o tipo** de um campo que já existe é quebra, não ajuste
 
-Pior que acrescentar campo, e foi como quebramos a produção em 15/09/2026 (api#107): o api#98 trocou
+Pior que acrescentar campo, e foi como quebramos a produção em 15/09/2026 (api#108): o api#98 trocou
 `public readonly ?string $accessories` por `public readonly array $accessories` em
 `EquipmentRegistered`/`EquipmentUpdated`, quando acessórios deixaram de ser texto livre. Os eventos
 gravados antes seguem no banco com uma string ali, e o construtor novo os rejeita com

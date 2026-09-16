@@ -46,7 +46,7 @@ class EquipmentRegistered extends ShouldBeStored
         // Até o api#98, `accessories` era texto livre (`?string`) — os eventos daquela época
         // continuam no banco com uma string aqui. Aceitar string|null é o que os mantém
         // desserializáveis: sem isso, editar ou excluir um equipamento cadastrado antes de
-        // 14/09/2026 estoura InvalidStoredEvent (aconteceu em produção, ver api#107), e o
+        // 14/09/2026 estoura InvalidStoredEvent (aconteceu em produção, ver api#108), e o
         // event-sourcing:replay nem começa.
         //
         // O texto vira lista vazia, e isso não perde nada que já não estivesse perdido: o api#98

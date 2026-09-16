@@ -9,4 +9,6 @@ use Modules\Accessories\Presentation\Http\Controllers\AccessoryController;
 Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('/accessories', [AccessoryController::class, 'index']);
     Route::post('/accessories', [AccessoryController::class, 'store']);
+    Route::put('/accessories/{id}', [AccessoryController::class, 'update']);
+    Route::delete('/accessories/{id}', [AccessoryController::class, 'destroy']);
 });

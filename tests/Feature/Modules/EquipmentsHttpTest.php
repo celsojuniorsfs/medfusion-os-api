@@ -841,6 +841,40 @@ class EquipmentsHttpTest extends TestCase
         ]);
     }
 
+    /**
+     * Renomear acessório não copia dado nenhum pra `equipments` (o nome vem pela relação), mas a
+     * listagem cacheada embute esse nome — sem invalidar, ela serviria o nome antigo por até uma
+     * hora. É o EquipmentProjector que invalida, reagindo ao evento do outro módulo.
+     */
+    public function test_renaming_an_accessory_invalidates_the_equipment_listing_cache(): void
+    {
+        $clientId = $this->aClientId();
+        $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson("/api/v1/clients/{$clientId}/equipments", [
+                'name' => 'Bisturi',
+                'brand' => 'Marca X',
+                'model' => 'Modelo X',
+                'no_accessories' => false,
+                'accessories' => [['name' => 'Cabo de forsa', 'quantity' => 1]],
+            ])
+            ->assertCreated();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson("/api/v1/clients/{$clientId}/equipments")
+            ->assertJsonPath('data.0.accessories.0.name', 'Cabo de forsa');
+
+        $accessoryId = Accessory::where('name', 'Cabo de forsa')->value('id');
+        $this->actingAs($user, 'sanctum')
+            ->putJson("/api/v1/accessories/{$accessoryId}", ['name' => 'Cabo de força'])
+            ->assertOk();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson("/api/v1/clients/{$clientId}/equipments")
+            ->assertJsonPath('data.0.accessories.0.name', 'Cabo de força');
+    }
+
     /** Um replay precisa atravessar um stream misto (evento velho + evento novo) sem estourar. */
     public function test_replaying_a_stream_that_mixes_old_and_new_event_formats(): void
     {

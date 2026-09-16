@@ -6,7 +6,10 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Modules\Accessories\Domain\AccessoryAggregate;
+use Modules\Accessories\Domain\Events\AccessoryRemoved;
 use Modules\Accessories\Infrastructure\ReadModels\Accessory;
+use Modules\Clients\Domain\ClientAggregate;
+use Modules\Clients\Domain\Enums\PersonType;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
 use Tests\TestCase;
@@ -29,6 +32,16 @@ class AccessoriesHttpTest extends TestCase
     {
         $uuid = (string) Str::uuid();
         AccessoryAggregate::retrieve($uuid)->register($name)->persist();
+
+        return $uuid;
+    }
+
+    private function aClientId(): string
+    {
+        $uuid = (string) Str::uuid();
+        ClientAggregate::retrieve($uuid)
+            ->register(PersonType::Company, 'Hospital São Lucas', '31233218000110', null, null, null, null, null, null, null, null, null, null)
+            ->persist();
 
         return $uuid;
     }
@@ -79,6 +92,67 @@ class AccessoriesHttpTest extends TestCase
 
         $response->assertStatus(422);
         $response->assertJsonValidationErrors('name');
+    }
+
+    public function test_updates_an_accessory(): void
+    {
+        $accessoryId = $this->anAccessoryId('Cabo de forsa');
+
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->putJson("/api/v1/accessories/{$accessoryId}", ['name' => 'Cabo de força']);
+
+        $response->assertOk();
+        $response->assertJsonPath('data.name', 'Cabo de força');
+        $this->assertDatabaseHas('accessories', ['id' => $accessoryId, 'name' => 'Cabo de força']);
+    }
+
+    public function test_returns_404_when_updating_an_unknown_accessory(): void
+    {
+        $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->putJson('/api/v1/accessories/'.Str::uuid(), ['name' => 'Pedal'])
+            ->assertStatus(404);
+    }
+
+    public function test_removes_an_accessory_that_is_not_in_use(): void
+    {
+        $accessoryId = $this->anAccessoryId('Acessório de teste');
+
+        $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->deleteJson("/api/v1/accessories/{$accessoryId}")
+            ->assertNoContent();
+
+        $this->assertDatabaseMissing('accessories', ['id' => $accessoryId]);
+    }
+
+    /**
+     * Mesmo par de asserções do catálogo de modelos: o 409 é o comportamento visível, mas o teste
+     * que trava a implementação é o de que NENHUM evento de remoção foi gravado — recusar pelo erro
+     * de FK (depois do persist) deixaria um AccessoryRemoved no stored_events com a linha viva.
+     */
+    public function test_refuses_to_remove_an_accessory_in_use(): void
+    {
+        $clientId = $this->aClientId();
+        $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson("/api/v1/clients/{$clientId}/equipments", [
+                'name' => 'Bisturi',
+                'brand' => 'Marca X',
+                'model' => 'Modelo X',
+                'no_accessories' => false,
+                'accessories' => [['name' => 'Cabo de força', 'quantity' => 1]],
+            ])
+            ->assertCreated();
+
+        $accessoryId = Accessory::where('name', 'Cabo de força')->value('id');
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->deleteJson("/api/v1/accessories/{$accessoryId}");
+
+        $response->assertStatus(409);
+        $response->assertJsonPath('message', 'Este acessório está em uso por equipamentos cadastrados e não pode ser removido.');
+        $this->assertDatabaseHas('accessories', ['id' => $accessoryId]);
+        $this->assertDatabaseMissing('stored_events', ['event_class' => AccessoryRemoved::class]);
     }
 
     public function test_accepts_a_duplicate_name(): void

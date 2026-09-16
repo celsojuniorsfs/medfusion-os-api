@@ -92,9 +92,9 @@ class EquipmentsHttpTest extends TestCase
     private function minimalEquipmentPayload(): array
     {
         return [
-            'name' => 'Bisturi',
-            'brand' => 'Marca X',
-            'model' => 'Modelo X',
+            // Desde o api#112, o único jeito de vincular um equipamento ao catálogo é escolher uma
+            // entrada existente — a Request não aceita mais name/brand/model como texto livre.
+            'equipment_model_id' => $this->anEquipmentModelId(),
             'no_accessories' => true,
         ];
     }
@@ -132,12 +132,11 @@ class EquipmentsHttpTest extends TestCase
     public function test_creates_an_equipment_with_all_fields(): void
     {
         $clientId = $this->aClientId();
+        $modelId = $this->anEquipmentModelId('Bisturi Elétrico', 'Marca X', 'BX-2000');
 
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
             ->postJson("/api/v1/clients/{$clientId}/equipments", [
-                'name' => 'Bisturi Elétrico',
-                'brand' => 'Marca X',
-                'model' => 'BX-2000',
+                'equipment_model_id' => $modelId,
                 'serial_number' => 'SN-123',
                 'asset_tag' => 'PAT-456',
                 'no_accessories' => false,
@@ -203,10 +202,10 @@ class EquipmentsHttpTest extends TestCase
         $clientId = $this->aClientId();
 
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
-            ->postJson("/api/v1/clients/{$clientId}/equipments", ['brand' => 'Marca X']);
+            ->postJson("/api/v1/clients/{$clientId}/equipments", []);
 
         $response->assertStatus(422);
-        $response->assertJsonValidationErrors(['name', 'model', 'no_accessories']);
+        $response->assertJsonValidationErrors(['equipment_model_id', 'no_accessories']);
     }
 
     public function test_rejects_creation_without_marking_no_accessories_and_without_any_accessory(): void
@@ -215,9 +214,7 @@ class EquipmentsHttpTest extends TestCase
 
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
             ->postJson("/api/v1/clients/{$clientId}/equipments", [
-                'name' => 'Bisturi',
-                'brand' => 'Marca X',
-                'model' => 'Modelo X',
+                'equipment_model_id' => $this->anEquipmentModelId(),
                 'no_accessories' => false,
             ]);
 
@@ -236,7 +233,6 @@ class EquipmentsHttpTest extends TestCase
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
             ->postJson("/api/v1/clients/{$clientId}/equipments", [
                 ...$this->minimalEquipmentPayload(),
-                'name' => 'Bisturi (unidade 2)',
                 'serial_number' => 'SN-123',
             ]);
 
@@ -247,23 +243,27 @@ class EquipmentsHttpTest extends TestCase
     {
         $clientId = $this->aClientId();
         $equipmentId = $this->anEquipmentId($clientId);
+        $modelId = $this->anEquipmentModelId('Bisturi Elétrico', 'Marca Y', 'Modelo Y');
 
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
             ->putJson("/api/v1/clients/{$clientId}/equipments/{$equipmentId}", [
-                ...$this->minimalEquipmentPayload(),
-                'name' => 'Bisturi Elétrico',
-                'brand' => 'Marca Y',
+                'equipment_model_id' => $modelId,
+                'no_accessories' => true,
             ]);
 
+        // name/brand vêm do modelo escolhido, não de texto no payload — é a derivação que o
+        // api#112 introduziu.
         $response->assertOk();
         $response->assertJsonPath('data.name', 'Bisturi Elétrico');
         $response->assertJsonPath('data.brand', 'Marca Y');
+        $response->assertJsonPath('data.equipment_model_id', $modelId);
     }
 
     public function test_updating_an_equipment_replaces_its_accessories(): void
     {
         $clientId = $this->aClientId();
         $equipmentId = $this->anEquipmentId($clientId);
+        $modelId = $this->anEquipmentModelId('Bisturi', 'Marca X', 'Modelo X');
         $cabo = $this->anAccessoryId('Cabo de força');
         EquipmentAggregate::retrieve($equipmentId)
             ->update('Bisturi', 'Marca X', 'Modelo X', 'SN-123', null, [['accessory_id' => $cabo, 'quantity' => 1]])
@@ -272,7 +272,7 @@ class EquipmentsHttpTest extends TestCase
         $pedal = $this->anAccessoryId('Pedal');
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
             ->putJson("/api/v1/clients/{$clientId}/equipments/{$equipmentId}", [
-                ...$this->minimalEquipmentPayload(),
+                'equipment_model_id' => $modelId,
                 'no_accessories' => false,
                 'accessories' => [['accessory_id' => $pedal, 'quantity' => 3]],
             ]);
@@ -383,46 +383,13 @@ class EquipmentsHttpTest extends TestCase
             ->assertJsonCount(1, 'data');
     }
 
-    public function test_creating_an_equipment_registers_its_model_in_the_global_catalog(): void
-    {
-        $clientId = $this->aClientId();
-
-        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
-            ->postJson("/api/v1/clients/{$clientId}/equipments", [
-                'name' => 'Ultrassom',
-                'brand' => 'Sonopus',
-                'model' => 'XYZ-100',
-                'no_accessories' => true,
-            ]);
-
-        $response->assertCreated();
-
-        $modelId = EquipmentModel::where('name', 'Ultrassom')->value('id');
-        $this->assertNotNull($modelId);
-        $response->assertJsonPath('data.equipment_model_id', $modelId);
-    }
-
-    public function test_creating_two_equipments_with_the_same_triple_reuses_one_catalog_entry(): void
-    {
-        $clientA = $this->aClientId('Hospital São Lucas', '31233218000110');
-        $clientB = $this->aClientId('Clínica Vida', '11222333000181');
-        $user = $this->authenticatedUser();
-
-        // Mesmo modelo, clientes diferentes — é exatamente o ganho que o cliente pediu: o catálogo
-        // é global, então o segundo cadastro não cria entrada nova.
-        foreach ([$clientA, $clientB] as $clientId) {
-            $this->actingAs($user, 'sanctum')
-                ->postJson("/api/v1/clients/{$clientId}/equipments", [
-                    'name' => 'Ultrassom',
-                    'brand' => 'Sonopus',
-                    'model' => 'XYZ-100',
-                    'no_accessories' => true,
-                ])
-                ->assertCreated();
-        }
-
-        $this->assertEquals(1, EquipmentModel::where('name', 'Ultrassom')->count());
-    }
+    // test_creating_an_equipment_registers_its_model_in_the_global_catalog e
+    // test_creating_two_equipments_with_the_same_triple_reuses_one_catalog_entry existiam pra
+    // travar o cadastro implícito (texto livre criando/reaproveitando entrada por busca de trio) —
+    // esse comportamento foi REMOVIDO no api#112 (resolveEquipmentModel não existe mais), não só
+    // desviado, então os dois testes perderam o que testavam. A reutilização de uma entrada global
+    // entre clientes diferentes continua valendo, só que agora é sempre por id explícito — ver
+    // test_creating_an_equipment_referencing_an_existing_model abaixo.
 
     public function test_creating_an_equipment_referencing_an_existing_model(): void
     {
@@ -432,14 +399,16 @@ class EquipmentsHttpTest extends TestCase
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
             ->postJson("/api/v1/clients/{$clientId}/equipments", [
                 'equipment_model_id' => $modelId,
-                'name' => 'Monitor',
-                'brand' => 'Marca X',
-                'model' => 'M-1',
                 'no_accessories' => true,
             ]);
 
+        // name/brand/model vêm da entrada do catálogo, nunca de texto no payload (não existe mais
+        // esse campo) — é a garantia central do api#112.
         $response->assertCreated();
         $response->assertJsonPath('data.equipment_model_id', $modelId);
+        $response->assertJsonPath('data.name', 'Monitor');
+        $response->assertJsonPath('data.brand', 'Marca X');
+        $response->assertJsonPath('data.model', 'M-1');
         $this->assertEquals(1, EquipmentModel::count());
     }
 
@@ -450,10 +419,51 @@ class EquipmentsHttpTest extends TestCase
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
             ->postJson("/api/v1/clients/{$clientId}/equipments", [
                 'equipment_model_id' => (string) Str::uuid(),
-            ] + $this->minimalEquipmentPayload());
+                'no_accessories' => true,
+            ]);
 
         $response->assertStatus(422);
         $response->assertJsonValidationErrors('equipment_model_id');
+    }
+
+    public function test_rejects_creation_without_an_equipment_model_id(): void
+    {
+        $clientId = $this->aClientId();
+
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->postJson("/api/v1/clients/{$clientId}/equipments", ['no_accessories' => true]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('equipment_model_id');
+    }
+
+    /**
+     * O caso do equipamento local que ficou de fora do backfill do api#101 (sem
+     * `equipment_model_id`): editar agora EXIGE escolher um modelo, migrando-o na hora — sem
+     * precisar de um comando de migração em lote (decisão tomada na entrevista do api#112).
+     */
+    public function test_editing_a_legacy_equipment_without_a_catalog_link_requires_choosing_one(): void
+    {
+        $clientId = $this->aClientId();
+        // anEquipmentId chama o agregado direto, sem equipment_model_id — o equivalente a um
+        // equipamento cadastrado antes do api#101 que não foi ligado no backfill.
+        $equipmentId = $this->anEquipmentId($clientId, 'Aparelho Legado');
+        $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')
+            ->putJson("/api/v1/clients/{$clientId}/equipments/{$equipmentId}", ['no_accessories' => true])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('equipment_model_id');
+
+        $modelId = $this->anEquipmentModelId('Aparelho Legado', 'Marca X', 'Modelo X');
+        $this->actingAs($user, 'sanctum')
+            ->putJson("/api/v1/clients/{$clientId}/equipments/{$equipmentId}", [
+                'equipment_model_id' => $modelId,
+                'no_accessories' => true,
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('equipments', ['id' => $equipmentId, 'equipment_model_id' => $modelId]);
     }
 
     /**
@@ -631,9 +641,7 @@ class EquipmentsHttpTest extends TestCase
 
         $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
             ->putJson("/api/v1/clients/{$clientId}/equipments/{$equipmentId}", [
-                'name' => 'Aparelho Antigo',
-                'brand' => 'Marca Antiga',
-                'model' => 'MA-1',
+                'equipment_model_id' => $this->anEquipmentModelId('Aparelho Antigo', 'Marca Antiga', 'MA-1'),
                 'no_accessories' => false,
                 'accessories' => [['name' => 'Cabo de força', 'quantity' => 1]],
             ]);
@@ -671,9 +679,7 @@ class EquipmentsHttpTest extends TestCase
 
         $this->actingAs($this->authenticatedUser(), 'sanctum')
             ->putJson("/api/v1/clients/{$clientId}/equipments/{$equipmentId}", [
-                'name' => 'Aparelho Antigo',
-                'brand' => 'Marca Antiga',
-                'model' => 'MA-1',
+                'equipment_model_id' => $this->anEquipmentModelId('Aparelho Antigo', 'Marca Antiga', 'MA-1'),
                 'no_accessories' => true,
             ])
             ->assertOk();
@@ -688,17 +694,14 @@ class EquipmentsHttpTest extends TestCase
     {
         $clientId = $this->aClientId();
         $user = $this->authenticatedUser();
+        $modelId = $this->anEquipmentModelId('Utrassom', 'Sonopus', 'XYZ-100');
 
         $this->actingAs($user, 'sanctum')
             ->postJson("/api/v1/clients/{$clientId}/equipments", [
-                'name' => 'Utrassom',
-                'brand' => 'Sonopus',
-                'model' => 'XYZ-100',
+                'equipment_model_id' => $modelId,
                 'no_accessories' => true,
             ])
             ->assertCreated();
-
-        $modelId = EquipmentModel::where('name', 'Utrassom')->value('id');
 
         $this->actingAs($user, 'sanctum')
             ->putJson("/api/v1/equipment-models/{$modelId}", [
@@ -720,18 +723,16 @@ class EquipmentsHttpTest extends TestCase
     {
         $clientId = $this->aClientId();
         $user = $this->authenticatedUser();
+        $modelId = $this->anEquipmentModelId('Utrassom', 'Sonopus', 'XYZ-100');
 
         $this->actingAs($user, 'sanctum')
             ->postJson("/api/v1/clients/{$clientId}/equipments", [
-                'name' => 'Utrassom',
-                'brand' => 'Sonopus',
-                'model' => 'XYZ-100',
+                'equipment_model_id' => $modelId,
                 'no_accessories' => true,
             ])
             ->assertCreated();
 
-        $equipmentId = Equipment::where('name', 'Utrassom')->value('id');
-        $modelId = EquipmentModel::where('name', 'Utrassom')->value('id');
+        $equipmentId = Equipment::where('equipment_model_id', $modelId)->value('id');
 
         // OS de verdade pelo endpoint, em vez de inserir a linha na mão: é o OrderProjector que
         // grava o snapshot, e é o comportamento dele que este teste precisa travar.
@@ -764,12 +765,11 @@ class EquipmentsHttpTest extends TestCase
     {
         $clientId = $this->aClientId();
         $user = $this->authenticatedUser();
+        $modelId = $this->anEquipmentModelId('Utrassom', 'Sonopus', 'XYZ-100');
 
         $this->actingAs($user, 'sanctum')
             ->postJson("/api/v1/clients/{$clientId}/equipments", [
-                'name' => 'Utrassom',
-                'brand' => 'Sonopus',
-                'model' => 'XYZ-100',
+                'equipment_model_id' => $modelId,
                 'no_accessories' => true,
             ])
             ->assertCreated();
@@ -778,7 +778,6 @@ class EquipmentsHttpTest extends TestCase
             ->getJson("/api/v1/clients/{$clientId}/equipments")
             ->assertJsonPath('data.0.name', 'Utrassom');
 
-        $modelId = EquipmentModel::where('name', 'Utrassom')->value('id');
         $this->actingAs($user, 'sanctum')
             ->putJson("/api/v1/equipment-models/{$modelId}", [
                 'name' => 'Ultrassom',
@@ -853,9 +852,7 @@ class EquipmentsHttpTest extends TestCase
 
         $this->actingAs($user, 'sanctum')
             ->postJson("/api/v1/clients/{$clientId}/equipments", [
-                'name' => 'Bisturi',
-                'brand' => 'Marca X',
-                'model' => 'Modelo X',
+                'equipment_model_id' => $this->anEquipmentModelId('Bisturi', 'Marca X', 'Modelo X'),
                 'no_accessories' => false,
                 'accessories' => [['name' => 'Cabo de forsa', 'quantity' => 1]],
             ])

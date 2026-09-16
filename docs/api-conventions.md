@@ -182,9 +182,9 @@ nome de acessório: o seletor do frontend oferece o que já existe antes de deix
 
 ### Manutenção do catálogo (api#109)
 
-O catálogo é alimentado sozinho — todo equipamento salvo com marca/modelo digitados cria uma entrada
-—, então erro de digitação e dado de teste entram e ficariam pra sempre. Daí `PUT` e `DELETE` em
-`/equipment-models/{id}`, com duas regras que valem a pena saber de cor:
+Até o api#112, o catálogo era alimentado sozinho — todo equipamento salvo com marca/modelo digitados
+cria uma entrada —, então erro de digitação e dado de teste entravam e ficariam pra sempre. Daí `PUT`
+e `DELETE` em `/equipment-models/{id}`, com duas regras que valem a pena saber de cor:
 
 - **Corrigir uma entrada corrige os equipamentos que a usam.** É o que se espera de "consertei no
   catálogo": o typo some da tela do equipamento também. **OS já emitidas não mudam** — a seção
@@ -197,6 +197,19 @@ O catálogo de **acessórios** (`PUT|DELETE /accessories/{id}`) segue as mesmas 
 diferença: corrigir o nome de um acessório **não precisa propagar nada** — ele nunca foi copiado,
 `equipment_accessories` guarda só o id e o nome vem pela relação. O que os dois casos têm em comum é
 invalidar a listagem de equipamentos, que embute esses textos no cache.
+
+### Seleção obrigatória — fecha a causa-raiz (api#112, issue #110)
+
+`POST/PUT /clients/{id}/equipments` deixou de aceitar `name`/`brand`/`model` como texto livre.
+`equipment_model_id` é obrigatório, e o `EquipmentController` lê o trio direto do `EquipmentModel`
+encontrado — o método que procurava por texto e cadastrava uma entrada nova quando não achava
+(`resolveEquipmentModel`) foi removido, não só desviado.
+
+Isso fecha a causa-raiz registrada na #110: a única porta de entrada do catálogo agora é
+`POST /equipment-models`, uma ação deliberada, nunca mais um efeito colateral de salvar um
+equipamento. Equipamento cadastrado antes disso e sem vínculo (o backfill do api#101 não achou
+correspondência) precisa ganhar um vínculo na próxima edição — a mesma validação vale pro `PUT`,
+então não tem como salvar sem escolher um modelo.
 
 ## Fotos do equipamento (api#102)
 

@@ -1165,19 +1165,19 @@ components:
 
     EquipmentInput:
       type: object
-      required: [name, brand, model, no_accessories]
+      required: [equipment_model_id, no_accessories]
       properties:
-        name: { type: string }
-        brand: { type: string }
-        model: { type: string }
         equipment_model_id:
-          type: ["string", "null"]
+          type: string
           format: uuid
           description: >
-            Entrada do catálogo global de modelos escolhida no seletor (api#101). Opcional: quando
-            vem, name/brand/model devem ser os da entrada escolhida; quando não vem, a API procura
-            uma entrada com esse mesmo trio e, se não existir, cadastra uma nova no catálogo. Ou
-            seja, todo equipamento acaba ligado ao catálogo de um jeito ou de outro.
+            Entrada do catálogo global de modelos (ver EquipmentModel) — obrigatório desde o
+            api#112. name/brand/model do equipamento vêm sempre da entrada escolhida, lidos no
+            servidor; não é mais possível mandar texto livre aqui. Fecha a causa-raiz da issue
+            #110: até o api#112, name/brand/model chegavam como texto e a API cadastrava uma
+            entrada nova no catálogo sozinha quando não achava uma igual — erro de digitação e
+            dado de teste entravam pra sempre sem ninguém pedir. Cadastrar um modelo novo agora só
+            acontece em POST /equipment-models.
         serial_number: { type: ["string", "null"] }
         asset_tag: { type: ["string", "null"] }
         no_accessories:

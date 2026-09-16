@@ -143,24 +143,32 @@ restrição). Doeu para descobrir porque:
   resolve tudo recursivamente pra array puro, Resources/Collections aninhados incluídos) em vez
   de confiar em `->toArray()` puro quando o Resource tem qualquer campo composto.
 
-## Acrescentar campo a um evento já gravado: o que importa é ser nullable, não o default
+## Acrescentar campo a um evento já gravado: precisa de default OU de nulabilidade
 
 Ao adicionar um parâmetro novo a uma classe `ShouldBeStored` que já tem eventos no banco
-(`stored_events`), o payload antigo não tem essa chave. O que mantém esses eventos
-desserializáveis num `event-sourcing:replay` é o parâmetro ser **nullable** (`?string $x`) — não o
-valor default. Confirmado empiricamente em 15/09/2026 no api#101, rodando o teste de replay com
-cada variação:
+(`stored_events`), o payload antigo não tem essa chave. O construtor precisa conseguir produzir um
+valor mesmo assim — e para isso **um default OU o tipo ser nullable já basta**; o que quebra é não
+ter nenhum dos dois. Matriz confirmada empiricamente em 15/09/2026 no api#101, rodando o teste de
+replay com cada variação:
 
 | Assinatura | Replay de evento antigo |
 |---|---|
 | `?string $x = null` | funciona |
-| `?string $x` (sem default) | **funciona** — o default não é o que importa aqui |
-| `string $x` (não-nullable) | quebra com `InvalidStoredEvent` |
+| `?string $x` (nullable, sem default) | funciona |
+| `string $x = 'algo'` (não-nullable, com default) | desserializa (usa o default) |
+| `string $x` (não-nullable, sem default) | quebra com `InvalidStoredEvent` |
 
-O default `= null` continua útil, mas por outro motivo: os chamadores PHP que não passam o
-parâmetro (ex.: `OrderController` cadastrando equipamento implicitamente pela tela de OS). Não
-confunda os dois — e coloque o parâmetro novo **por último**, porque as chamadas existentes são
-posicionais.
+Ou seja: não basta olhar só pro default nem só pro `?`. Na prática, **prefira `?tipo $x = null`**
+nos dois papéis ao mesmo tempo — e entenda que `null` normalmente significa "desconhecido naquele
+evento", não "vazio de propósito"; quem decide o que fazer com isso é o projector (no api#101 ele
+resolve o modelo pelo trio nome/marca/modelo).
+
+Um cuidado à parte do default: um valor que desserializa não é necessariamente um valor **válido**.
+No teste acima, `string $x = 'algo'` passou pela desserialização e só estourou depois, no `INSERT`,
+por não ser um uuid existente na FK. Se o campo novo é uma chave estrangeira, `null` é o único
+default honesto.
+
+Coloque o parâmetro novo **por último**, porque as chamadas existentes são posicionais.
 
 Dois detalhes do pacote que economizam tempo ao escrever um teste de replay:
 

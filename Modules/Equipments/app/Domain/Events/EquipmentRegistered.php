@@ -11,19 +11,17 @@ class EquipmentRegistered extends ShouldBeStored
      *                                                                               — accessory_id sempre presente (nome novo já foi cadastrado no catálogo antes do
      *                                                                               evento ser gravado, ver EquipmentController)
      * @param  string|null  $equipmentModelId  entrada do catálogo global de modelos (api#101).
-     *                                         Duas características, cada uma com um motivo
-     *                                         diferente — confirmado na marra rodando o teste de
-     *                                         replay com cada variação:
-     *                                         - **`?string` (nullable)** é o que mantém os eventos
-     *                                         gravados antes do api#101 desserializáveis: o
-     *                                         payload deles não tem essa chave, e o serializer do
-     *                                         spatie passa null. Torná-lo obrigatório quebra o
-     *                                         replay na hora (InvalidStoredEvent).
-     *                                         - **O default `= null`** não tem a ver com
-     *                                         desserialização (com nullable, o replay funciona com
-     *                                         ou sem ele): é pros chamadores PHP que não passam
-     *                                         modelo, como o OrderController ao cadastrar um
-     *                                         equipamento implicitamente pela tela de OS.
+     *                                         Último parâmetro, nullable e com default — cada
+     *                                         parte importa por um motivo (matriz completa
+     *                                         verificada na marra e registrada em CLAUDE.md):
+     *                                         - **último**: as chamadas existentes são posicionais;
+     *                                         - **nullable ou com default** (aqui, os dois): sem
+     *                                         nenhum dos dois, os eventos gravados antes do
+     *                                         api#101 — cujo payload não tem essa chave — param de
+     *                                         desserializar num replay (InvalidStoredEvent);
+     *                                         - **null especificamente**, e não outro default:
+     *                                         isto é uma FK, então qualquer valor inventado
+     *                                         desserializaria e só estouraria depois, no INSERT.
      *                                         `null` aqui significa "desconhecido", não "sem
      *                                         modelo" — ver EquipmentProjector, que nesse caso
      *                                         resolve pelo trio nome/marca/modelo.

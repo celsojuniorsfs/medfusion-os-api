@@ -459,9 +459,10 @@ class EquipmentsHttpTest extends TestCase
      * escrevendo um stored_event no formato antigo na mão e reprojetando.
      *
      * Verificado que ele pega a regressão de verdade (não só passa junto): trocando
-     * `?string $equipmentModelId` por `string $equipmentModelId` em EquipmentRegistered, este
-     * teste falha na hora com InvalidStoredEvent. É a NULABILIDADE que sustenta isso — tirar só o
-     * default (`= null`) não quebra nada aqui.
+     * `?string $equipmentModelId = null` por `string $equipmentModelId` (sem default) em
+     * EquipmentRegistered, este teste falha na hora com InvalidStoredEvent. Basta um dos dois —
+     * default ou nulabilidade — pro payload antigo continuar desserializando; a matriz completa
+     * está em CLAUDE.md.
      *
      * Também cobre a outra metade: o EquipmentProjector resolve o modelo pelo trio quando o evento
      * não traz id, então um equipamento antigo passa a apontar pro catálogo depois de um replay,

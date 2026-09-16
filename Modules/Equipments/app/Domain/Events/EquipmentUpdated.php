@@ -9,9 +9,9 @@ class EquipmentUpdated extends ShouldBeStored
     /**
      * @param  array<int, array{accessory_id: string, quantity: int}>  $accessories  já resolvido
      *                                                                               — ver o mesmo comentário em EquipmentRegistered
-     * @param  string|null  $equipmentModelId  nullable pelo mesmo motivo de
-     *                                         compatibilidade de replay explicado em EquipmentRegistered (é a nulabilidade, não
-     *                                         o default, que mantém os eventos antigos desserializáveis)
+     * @param  string|null  $equipmentModelId  último parâmetro, nullable e com default, pelo mesmo
+     *                                         motivo de compatibilidade de replay explicado em
+     *                                         EquipmentRegistered
      */
     public function __construct(
         public readonly string $name,

@@ -3,6 +3,7 @@
 namespace Modules\Equipments\Providers;
 
 use Modules\Equipments\Infrastructure\Projectors\EquipmentProjector;
+use Modules\Equipments\Infrastructure\Reactors\EquipmentPhotoReactor;
 use Modules\Equipments\Presentation\Console\BackfillEquipmentModels;
 use Nwidart\Modules\Support\ModuleServiceProvider;
 use Spatie\EventSourcing\Facades\Projectionist;
@@ -30,6 +31,7 @@ class EquipmentsServiceProvider extends ModuleServiceProvider
         parent::boot();
 
         Projectionist::addProjector(EquipmentProjector::class);
+        Projectionist::addReactor(EquipmentPhotoReactor::class);
 
         if ($this->app->runningInConsole()) {
             $this->commands([BackfillEquipmentModels::class]);

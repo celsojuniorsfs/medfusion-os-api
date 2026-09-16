@@ -182,6 +182,31 @@ nome de acessório: o seletor do frontend oferece o que já existe antes de deix
 novo. Sem editar/remover entrada nesta rodada — ver `architecture.md` § Agregados e eventos pra
 por que essa ausência importa pro cache.
 
+## Fotos do equipamento (api#102)
+
+Pedido do cliente: registrar "a forma com que a gente recebe o aparelho, e pra não ter divergência
+também na saída". Fotos ficam no **cadastro do equipamento**, não na OS.
+
+Endpoints próprios (`/clients/{id}/equipments/{equipmentId}/photos`), **fora** do payload de
+`GET /clients/{id}/equipments`, por dois motivos: aquela listagem é cacheada por uma hora — e a URL
+da foto é assinada com validade de 30 minutos, então ficaria vencida no cache — e porque objeto
+aninhado novo dentro de um payload serializado é a classe de bug do api#99 (ver `CLAUDE.md`).
+
+**Exibição via URL assinada — a única rota do projeto fora do `auth:sanctum`.** Uma tag `<img>` não
+tem como mandar header `Authorization`, então a credencial é a assinatura da própria URL
+(`URL::temporarySignedRoute`, 30 min), e o `GET /equipment-photos/{photoId}` é protegido pelo
+middleware `signed`. Sem assinatura válida: 403. A alternativa considerada era o frontend baixar
+cada foto como blob pelo `HttpClient` (passando pelo interceptor que já existe) e gerar `objectURL`
+— mais fechado, porém com ciclo de vida de URL pra gerenciar em cada `<img>`; se o requisito de
+sigilo das fotos apertar, é pra lá que se move.
+
+O arquivo é gravado no disco **antes** do evento, que guarda só o caminho e os metadados — binário
+nunca entra no event store. Apagar o arquivo é trabalho de Reactor, nunca de Projector (ver
+`architecture.md` § Projectors síncronos, Reactors em fila).
+
+Aceita jpeg/png/webp até 8 MB. **HEIC, o padrão do iPhone, ainda não** — converter exigiria imagick
+no runtime; é o primeiro ajuste a fazer se o técnico usar iPhone e reclamar.
+
 ## Notificação automática (e-mail + WhatsApp)
 
 Novo na validação: ao criar a OS com sucesso, o backend gera o PDF e dispara o envio de uma

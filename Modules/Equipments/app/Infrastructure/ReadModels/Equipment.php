@@ -49,4 +49,15 @@ class Equipment extends Model
     {
         return $this->hasMany(EquipmentAccessory::class);
     }
+
+    /**
+     * Não carregada na listagem de equipamentos de propósito — fotos têm endpoint próprio
+     * (ver EquipmentPhotoController) pra não entrarem no payload cacheado.
+     *
+     * @return HasMany<EquipmentPhoto, $this>
+     */
+    public function photos(): HasMany
+    {
+        return $this->hasMany(EquipmentPhoto::class);
+    }
 }

@@ -5,11 +5,14 @@ namespace Modules\Equipments\Infrastructure\Projectors;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Modules\EquipmentModels\Infrastructure\ReadModels\EquipmentModel;
+use Modules\Equipments\Domain\Events\EquipmentPhotoAdded;
+use Modules\Equipments\Domain\Events\EquipmentPhotoRemoved;
 use Modules\Equipments\Domain\Events\EquipmentRegistered;
 use Modules\Equipments\Domain\Events\EquipmentRemoved;
 use Modules\Equipments\Domain\Events\EquipmentUpdated;
 use Modules\Equipments\Infrastructure\ReadModels\Equipment;
 use Modules\Equipments\Infrastructure\ReadModels\EquipmentAccessory;
+use Modules\Equipments\Infrastructure\ReadModels\EquipmentPhoto;
 use Spatie\EventSourcing\EventHandlers\Projectors\Projector;
 
 class EquipmentProjector extends Projector
@@ -44,6 +47,27 @@ class EquipmentProjector extends Projector
 
         $this->syncAccessories($event->aggregateRootUuid(), $event->accessories);
         $this->forgetCache();
+    }
+
+    public function onEquipmentPhotoAdded(EquipmentPhotoAdded $event): void
+    {
+        EquipmentPhoto::create([
+            // id vem do evento, não gerado aqui (ver EquipmentPhotoAdded): ele aparece na URL da
+            // foto, então precisa sobreviver a um replay.
+            'id' => $event->photoId,
+            'equipment_id' => $event->aggregateRootUuid(),
+            'path' => $event->path,
+            'original_name' => $event->originalName,
+            'mime_type' => $event->mimeType,
+            'size' => $event->size,
+        ]);
+    }
+
+    public function onEquipmentPhotoRemoved(EquipmentPhotoRemoved $event): void
+    {
+        // Só a linha. O arquivo no disco é com o EquipmentPhotoReactor — apagar arquivo aqui faria
+        // um event-sourcing:replay destruir todas as fotos do sistema.
+        EquipmentPhoto::whereKey($event->photoId)->delete();
     }
 
     public function onEquipmentRemoved(EquipmentRemoved $event): void

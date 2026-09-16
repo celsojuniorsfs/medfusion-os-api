@@ -81,7 +81,7 @@ de negócio (ex.: `certificate_number`).
 |---|---|---|
 | Identity | `UserAggregate` | `UserRegistered`, `UserPasswordChanged` |
 | Clients | `ClientAggregate` | `ClientRegistered`, `ClientUpdated`, `ClientRemoved` |
-| Equipments | `EquipmentAggregate` | `EquipmentRegistered`, `EquipmentUpdated`, `EquipmentRemoved` |
+| Equipments | `EquipmentAggregate` | `EquipmentRegistered`, `EquipmentUpdated`, `EquipmentRemoved`, `EquipmentPhotoAdded`, `EquipmentPhotoRemoved` |
 | Orders | `OrderAggregate` | `OrderOpened`, `OrderEquipmentAttached`, `OrderItemAdded`, `OrderStatusChanged` |
 | Accessories | `AccessoryAggregate` | `AccessoryRegistered` |
 | EquipmentModels | `EquipmentModelAggregate` | `EquipmentModelRegistered` |
@@ -125,6 +125,17 @@ por seguir o padrão de Actions.
 - **Reactors** (efeitos colaterais — notificação por e-mail/WhatsApp, geração de PDF, quando
   forem implementados) devem implementar `ShouldQueue`: um efeito colateral externo não pode
   segurar a resposta HTTP nem ser reexecutado durante um replay.
+  - **Exceção em vigor: `EquipmentPhotoReactor`** (api#102, primeiro Reactor do repositório), que
+    apaga o arquivo da foto e roda **síncrono**. Das duas razões acima, a que importa aqui é a
+    segunda — e ela vale por ser Reactor, com ou sem fila: replay não executa Reactor. Já a
+    primeira não compensa hoje: **não roda worker de fila em produção** (ver `ambientes.md`), então
+    um job enfileirado ficaria parado pra sempre e o arquivo nunca seria apagado. Apagar um arquivo
+    é rápido; segurar a resposta com isso é melhor do que vazar arquivo órfão no Object Storage.
+    Quando a fila passar a rodar de verdade, mover pra `ShouldQueue`.
+  - Regra geral que isso ilustra: **efeito colateral fora do banco nunca vai no Projector.** O
+    Projector reexecuta a cada `event-sourcing:replay`; se ele mexesse em disco, restaurar o banco
+    de um backup e reconstruir as projeções apagaria arquivos que deveriam continuar lá — e o
+    binário não está no event store pra ser recuperado.
 - O auto-discovery do spatie (`config/event-sourcing.php`) assume a convenção padrão do Laravel
   (namespace `App\` = pasta `app/`), que não bate com `Modules\<Módulo>\` = `Modules/<Módulo>/app/`
   de cada módulo. Em vez de reconfigurar o scanner por módulo, cada `<Módulo>ServiceProvider::boot()`

@@ -133,9 +133,13 @@ class EquipmentController
             return $data['equipment_model_id'];
         }
 
+        // Marca/modelo nunca chegam nulos aqui (EquipmentRequest exige os três), mas a comparação
+        // trata nulo do mesmo jeito que o EquipmentProjector — `where('brand', null)` vira
+        // `brand = NULL` em SQL e nunca casa, e essa pegadinha não deve depender de a validação
+        // continuar como está.
         $existing = EquipmentModel::where('name', $data['name'])
-            ->where('brand', $data['brand'])
-            ->where('model', $data['model'])
+            ->where(fn ($query) => $data['brand'] === null ? $query->whereNull('brand') : $query->where('brand', $data['brand']))
+            ->where(fn ($query) => $data['model'] === null ? $query->whereNull('model') : $query->where('model', $data['model']))
             ->value('id');
 
         return $existing ?? app(RegisterEquipmentModel::class)($data['name'], $data['brand'], $data['model'])->id;

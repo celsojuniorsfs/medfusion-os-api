@@ -96,9 +96,12 @@ class EquipmentProjector extends Projector
             return $equipmentModelId;
         }
 
+        // whereNull quando o valor é nulo: `where('brand', null)` vira `brand = NULL` em SQL, que
+        // nunca é verdadeiro — equipamento antigo sem marca jamais acharia o modelo dele, mesmo
+        // existindo no catálogo.
         return EquipmentModel::where('name', $name)
-            ->where('brand', $brand)
-            ->where('model', $model)
+            ->where(fn ($query) => $brand === null ? $query->whereNull('brand') : $query->where('brand', $brand))
+            ->where(fn ($query) => $model === null ? $query->whereNull('model') : $query->where('model', $model))
             ->value('id');
     }
 

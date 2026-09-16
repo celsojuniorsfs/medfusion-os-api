@@ -58,8 +58,8 @@ class BackfillEquipmentModels extends Command
 
         foreach ($triples as $triple) {
             $existing = EquipmentModel::where('name', $triple->name)
-                ->where('brand', $triple->brand)
-                ->where('model', $triple->model)
+                ->where(fn ($query) => $this->matchNullable($query, 'brand', $triple->brand))
+                ->where(fn ($query) => $this->matchNullable($query, 'model', $triple->model))
                 ->value('id');
 
             if ($dryRun) {
@@ -83,8 +83,8 @@ class BackfillEquipmentModels extends Command
             // alguém já tenha escolhido à mão depois do deploy.
             $linked += DB::table('equipments')
                 ->where('name', $triple->name)
-                ->where('brand', $triple->brand)
-                ->where('model', $triple->model)
+                ->where(fn ($query) => $this->matchNullable($query, 'brand', $triple->brand))
+                ->where(fn ($query) => $this->matchNullable($query, 'model', $triple->model))
                 ->whereNull('equipment_model_id')
                 ->update(['equipment_model_id' => $existing]);
         }
@@ -98,5 +98,18 @@ class BackfillEquipmentModels extends Command
         $this->info(sprintf('%d modelo(s) cadastrado(s) no catálogo, %d equipamento(s) ligado(s).', $created, $linked));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * `where('brand', null)` vira `brand = NULL` em SQL, que nunca é verdadeiro — a primeira versão
+     * deste comando (api#101) tinha esse bug e simplesmente não ligou os equipamentos sem
+     * marca/modelo, além de poder ter cadastrado entrada de catálogo que ficou órfã. Rodar de novo
+     * com esta versão acha a entrada existente em vez de duplicar, e completa o vínculo.
+     *
+     * @param  \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder<*>  $query
+     */
+    private function matchNullable($query, string $column, ?string $value)
+    {
+        return $value === null ? $query->whereNull($column) : $query->where($column, $value);
     }
 }

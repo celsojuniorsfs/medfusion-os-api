@@ -170,6 +170,25 @@ default honesto.
 
 Coloque o parâmetro novo **por último**, porque as chamadas existentes são posicionais.
 
+### E **mudar o tipo** de um campo que já existe é quebra, não ajuste
+
+Pior que acrescentar campo, e foi como quebramos a produção em 15/09/2026 (api#108): o api#98 trocou
+`public readonly ?string $accessories` por `public readonly array $accessories` em
+`EquipmentRegistered`/`EquipmentUpdated`, quando acessórios deixaram de ser texto livre. Os eventos
+gravados antes seguem no banco com uma string ali, e o construtor novo os rejeita com
+`InvalidStoredEvent` / `NotNormalizableValueException`.
+
+A regra, que vale pra sempre: **uma classe de evento precisa conseguir desserializar todo payload
+que já foi escrito pra ela.** Se o formato mudar, o construtor aceita os dois (`string|array|null` e
+normaliza no corpo, foi o que fizemos) — nunca só o novo.
+
+O que tornou isso invisível por dois dias, e é o que vale lembrar ao testar uma mudança dessas: **o
+sintoma não aparece em leitura.** A listagem lê a projeção e continua perfeita; só `retrieve()`
+relê o stream, e ele só roda no **PUT**, no **DELETE** e no `event-sourcing:replay`. Depois de mexer
+em classe de evento, teste editar e excluir um registro **antigo**, não só cadastrar um novo — e
+lembre que um `event-sourcing:replay` quebrado significa ficar sem o plano B de reconstruir
+projeção.
+
 Dois detalhes do pacote que economizam tempo ao escrever um teste de replay:
 
 - O uuid do agregado **não** vem da coluna `aggregate_uuid`: `ShouldBeStored::aggregateRootUuid()`

@@ -7,9 +7,16 @@ use Spatie\EventSourcing\StoredEvents\ShouldBeStored;
 class EquipmentRegistered extends ShouldBeStored
 {
     /**
-     * @param  array<int, array{accessory_id: string, quantity: int}>  $accessories  já resolvido
-     *                                                                               — accessory_id sempre presente (nome novo já foi cadastrado no catálogo antes do
-     *                                                                               evento ser gravado, ver EquipmentController)
+     * Já resolvido — accessory_id sempre presente (nome novo já foi cadastrado no catálogo antes
+     * do evento ser gravado, ver EquipmentController).
+     *
+     * @var array<int, array{accessory_id: string, quantity: int}>
+     */
+    public readonly array $accessories;
+
+    /**
+     * @param  string|array<int, array{accessory_id: string, quantity: int}>|null  $accessories  aceita
+     *                                                                                           string/null só por compatibilidade com o passado, ver o corpo do construtor
      * @param  string|null  $equipmentModelId  entrada do catálogo global de modelos (api#101).
      *                                         Último parâmetro, nullable e com default — cada
      *                                         parte importa por um motivo (matriz completa
@@ -33,7 +40,19 @@ class EquipmentRegistered extends ShouldBeStored
         public readonly ?string $model,
         public readonly ?string $serialNumber,
         public readonly ?string $assetTag,
-        public readonly array $accessories,
+        string|array|null $accessories = [],
         public readonly ?string $equipmentModelId = null,
-    ) {}
+    ) {
+        // Até o api#98, `accessories` era texto livre (`?string`) — os eventos daquela época
+        // continuam no banco com uma string aqui. Aceitar string|null é o que os mantém
+        // desserializáveis: sem isso, editar ou excluir um equipamento cadastrado antes de
+        // 14/09/2026 estoura InvalidStoredEvent (aconteceu em produção, ver api#108), e o
+        // event-sourcing:replay nem começa.
+        //
+        // O texto vira lista vazia, e isso não perde nada que já não estivesse perdido: o api#98
+        // removeu a coluna de texto sem migração de dado (decisão do cliente na época), então esses
+        // equipamentos já aparecem sem acessório na tela. A conversão só faz o evento concordar com
+        // o que a projeção mostra.
+        $this->accessories = is_array($accessories) ? $accessories : [];
+    }
 }

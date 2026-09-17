@@ -81,6 +81,7 @@ conexão):
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | credenciais do Valkey anexado ao environment (KV Store do Laravel Cloud, ou serviço equivalente) — nome de variável `REDIS_*` por convenção do driver, aponta pro Valkey |
 | `QUEUE_CONNECTION` | `database` — usada para enfileirar o envio de e-mail/WhatsApp da OS (ver abaixo); PDF continua gerado de forma síncrona no request |
 | `PULSE_ALLOWED_EMAILS` | e-mails (separados por vírgula) autorizados a abrir `/pulse` — ver "Monitoramento" abaixo |
+| `OTEL_*` | métricas via OpenTelemetry → Grafana Cloud, em transição para substituir o Pulse — ver a tabela completa em "Monitoramento (OpenTelemetry → Grafana Cloud)" abaixo |
 
 **Sobre o cache de listagens** (ver `docs/architecture.md` § Cache): o código usa
 `Cache::increment()`/`Cache::get()` — operações simples de uma chave só, suportadas por
@@ -133,6 +134,91 @@ produção só libera os e-mails listados em `PULSE_ALLOWED_EMAILS`. Sem conceit
 O card "Servers" (CPU/memória/disco) foi removido do dashboard — depende do daemon `pulse:check`
 rodando no servidor, e o compute do Laravel Cloud é efêmero e gerenciado pela plataforma; não faz
 sentido medir isso aqui (ver `docs/architecture.md`).
+
+> **16/09/2026 — em transição para OpenTelemetry.** Ver seção abaixo; o Pulse continua documentado
+> aqui até ser removido numa PR seguinte.
+
+### Monitoramento (OpenTelemetry → Grafana Cloud — 16/09/2026)
+
+Vai substituir o Laravel Pulse (seção acima). O racional da troca está em `docs/architecture.md` §
+Monitoramento; aqui fica só o operacional.
+
+**Sem recurso de infra novo**: nada de Prometheus ou Grafana self-hosted, nada de VPS, nada no
+`docker-compose.yml`. O próprio processo PHP faz um POST OTLP de saída para o Grafana Cloud ao fim
+de cada request. O free tier (10 mil séries ativas, 14 dias de retenção) cobre esta aplicação com
+folga — desde que `OTEL_SERVICE_INSTANCE_ID`/`gethostname()` esteja fazendo efeito (ver abaixo).
+
+Variáveis de ambiente:
+
+| Variável | Descrição |
+|---|---|
+| `OTEL_SDK_DISABLED` | `false` — liga o envio de métricas (default do `.env.example` é `true`) |
+| `OTEL_SERVICE_NAME` | `medfusion-os-api` — vira o label `job` no Grafana |
+| `OTEL_SERVICE_INSTANCE_ID` | em branco: `config/opentelemetry.php` usa `gethostname()` (um id por container). **Nunca** deixar o pacote gerar sozinho — o default dele é aleatório por request |
+| `OTEL_RESOURCE_ATTRIBUTES` | `deployment.environment.name=production` — separa produção de local nos painéis |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `https://otlp-gateway-prod-<região>.grafana.net/otlp` (o SDK acrescenta `/v1/metrics`) |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Basic <base64(instanceID:token)>` — **segredo**, gerado no portal do Grafana Cloud |
+| `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | `Delta` (ver abaixo) |
+
+#### Como conseguir as credenciais OTLP do Grafana Cloud
+
+Passo manual, fora do código — como a verificação da conta comercial do WhatsApp. Cinco minutos:
+
+1. Criar conta em [grafana.com](https://grafana.com) (free tier, sem cartão). Um stack
+   (`<sua-conta>.grafana.net`) é criado junto, já com Prometheus/Mimir e Loki.
+2. No portal, ir em **Connections → Add new connection → OpenTelemetry (OTLP)**.
+3. A página mostra o **endpoint** (`https://otlp-gateway-prod-<região>.grafana.net/otlp`) e o
+   **Instance ID** numérico do stack. Anote a região — ela faz parte da URL.
+4. Clicar em **Generate now / Create token** (escopo de escrita de métricas). A página devolve o
+   bloco de variáveis já montado, **incluindo o `OTEL_EXPORTER_OTLP_HEADERS` com o base64 pronto**.
+   Copie dali: montar `base64("<instanceID>:<token>")` à mão é a forma mais comum de errar isso. O
+   token só aparece uma vez.
+5. Colar no `.env` local (com `OTEL_SDK_DISABLED=false`) para testar, e depois nas variáveis do
+   environment `production` no painel da Laravel Cloud. **As aspas em
+   `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic ..."` são obrigatórias no `.env`** — o valor
+   tem `=` e o base64 costuma terminar em `=`.
+
+#### Onde ver os dados
+
+Explore → datasource `grafanacloud-<conta>-prom`. Os nomes OTLP são convertidos para a convenção
+do Prometheus (pontos viram `_`, a unidade vira sufixo):
+
+- `http_server_request_duration_seconds_{bucket,count,sum}`
+- `db_client_operation_duration_seconds_{bucket,count,sum}`
+
+Consultas de partida:
+
+```promql
+# p95 de latência HTTP por rota
+histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_request_duration_seconds_bucket[5m])))
+
+# taxa de erro 5xx
+sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+  / sum(rate(http_server_request_duration_seconds_count[5m]))
+
+# p99 de duração de query — o substituto do card "slow queries" do Pulse
+histogram_quantile(0.99, sum by (le) (rate(db_client_operation_duration_seconds_bucket[5m])))
+```
+
+`service.name` vira o label `job`, `service.instance.id` vira `instance`, e os demais atributos de
+recurso (incluindo `deployment.environment.name`) ficam na métrica `target_info`, acessível com
+`on(job, instance)`.
+
+#### Duas coisas para conferir depois do primeiro deploy
+
+- **Cardinalidade.** `count(count by (instance) (http_server_request_duration_seconds_count))` tem
+  que ficar na casa de "número de containers", estável. Se crescer a cada request,
+  `OTEL_SERVICE_INSTANCE_ID`/`gethostname()` não pegou, e o free tier estoura em horas.
+- **Temporalidade.** Usamos `Delta` porque em PHP cada request é um processo novo e uma série
+  cumulativa reiniciada a cada request faz `rate()` subcontar. Se o gateway do Grafana Cloud
+  recusar delta (erro 4xx no `storage/logs/laravel.log`), volte para `Cumulative` e assuma que as
+  contagens são um piso, não um número exato — ou reavalie um collector intermediário.
+
+Limitação conhecida do SDK PHP, para não perder tempo:
+`OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION=base2_exponential_bucket_histogram`
+**não faz nada** (não implementado até a v1.14). Ficamos com os buckets explícitos padrão do
+pacote.
 
 ### CORS
 

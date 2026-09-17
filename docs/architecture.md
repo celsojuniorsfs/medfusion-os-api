@@ -243,6 +243,61 @@ Card "Servers" (CPU/memória/disco) removido do dashboard: exige o daemon `pulse
 servidor, e o compute do Laravel Cloud é efêmero e gerenciado pela plataforma — não há o que medir
 aí. Detalhes de acesso (Basic Auth + allowlist de e-mail) em `docs/ambientes.md` § Monitoramento.
 
+> **16/09/2026 — em transição para OpenTelemetry.** O Pulse está sendo substituído (ver seção
+> abaixo); esta seção continua aqui só até o Pulse ser removido de fato numa PR seguinte, depois de
+> confirmar que a métrica nova chega no Grafana Cloud.
+
+## Monitoramento — métricas por OpenTelemetry, empurradas pro Grafana Cloud
+
+Desde 16/09/2026, a observabilidade deste backend também conta com métricas instrumentadas pelo
+[`keepsuit/laravel-opentelemetry`](https://github.com/keepsuit/laravel-opentelemetry) e enviadas
+por OTLP/HTTP direto pro Grafana Cloud — vai substituir o Laravel Pulse (seção acima) assim que a
+métrica for confirmada chegando de verdade no Grafana.
+
+**Duas métricas, de propósito** — as mesmas duas coisas que os cards do Pulse realmente respondiam:
+
+- `http.server.request.duration` (histograma, em segundos) — duração, contagem e taxa de erro das
+  requisições, tudo derivável do histograma mais o label de status.
+- `db.client.operation.duration` (histograma, em segundos) — o equivalente ao "slow queries" do
+  Pulse, com uma diferença importante: não é um log pré-filtrado por um limiar fixo, é a
+  distribuição inteira. O limiar de "lenta" vira um percentil num painel/alerta do Grafana, e pode
+  mudar sem redeploy.
+
+`http.client.request.duration` e as métricas do Redis vêm de brinde com o pacote — não construímos
+nada em cima delas. Sem tracing distribuído, sem pipeline de logs, sem métrica de negócio
+instrumentada: `traces.exporter` e `logs.exporter` estão fixados em `'null'` no
+`config/opentelemetry.php` (hardcoded, não por env — `OTEL_TRACES_EXPORTER=null` no `.env` viraria
+`null` de PHP, não a string, e o default do pacote é `otlp`). `tests/Feature/ObservabilityConfigTest.php`
+trava essas duas decisões.
+
+**Por que empurrar, e não expor um endpoint de scrape.** A mesma restrição que já tinha derrubado o
+card "Servers" do Pulse: o compute da Laravel Cloud é efêmero, gerenciado pela plataforma, não
+compartilhado entre réplicas e sem história de sidecar/daemon — e este projeto não roda worker de
+fila em produção. Um Prometheus fazendo scrape precisaria de um alvo estável e alcançável de fora;
+um `pulse:check` precisaria de um daemon. Um POST OTLP de saída, feito pelo próprio processo que
+atendeu a request, não precisa de nenhum dos dois. Foi o que decidiu entre OpenTelemetry e
+`promphp/prometheus_client_php`.
+
+**O preço de instrumentar PHP stateless**, que vale entender antes de mexer na configuração:
+
+- Cada request é um processo novo. O pacote, sem `OTEL_SERVICE_INSTANCE_ID`, gera um
+  `service.instance.id` **aleatório por request** — e o Grafana Cloud mapeia esse atributo pro
+  label `instance`, ou seja: uma série de métrica nova a cada requisição. `config/opentelemetry.php`
+  cai em `gethostname()` justamente para dar um id estável por container.
+- Pelo mesmo motivo a temporalidade é **Delta**, não Cumulative: uma série cumulativa que recomeça
+  do zero a cada request faz o `rate()` subcontar.
+- O POST OTLP acontece no `terminate()` da request. Em produção (PHP-FPM) a resposta já foi
+  entregue ao cliente antes disso; no Sail local (`php artisan serve`) não há esse mecanismo, então
+  ligar o SDK localmente acrescenta o round-trip até o Grafana na latência de cada request.
+
+Uma armadilha à parte, de framework, não de infra: **`OTEL_SDK_DISABLED` nunca pode ser setado via
+`<env>` do PHPUnit** — ver `CLAUDE.md` § OpenTelemetry pra causa raiz (resumo: o PHPUnit converte o
+literal `"true"` em bool nativo do PHP, que vira `"1"` ao reexportar pro processo, e o parser do
+SDK só aceita a string `"true"`/`"false"`). A variável é setada via `putenv()` puro em
+`tests/bootstrap.php`, referenciado por `phpunit.xml`.
+
+Credenciais, variáveis de ambiente e como ler os painéis: `docs/ambientes.md` § Monitoramento.
+
 ## Comandos úteis do nwidart/laravel-modules
 
 - `php artisan module:make <Nome> --api` — cria um módulo novo (só a parte de API; sem Blade).

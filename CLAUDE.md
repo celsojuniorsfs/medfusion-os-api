@@ -233,6 +233,38 @@ ali. A FK `restrictOnDelete` continua valendo como rede de segurança pra corrid
 O teste que trava isso não é o status 409 — é
 `assertDatabaseMissing('stored_events', ['event_class' => ...Removed::class])` depois da recusa.
 
+## OpenTelemetry: `OTEL_SDK_DISABLED` não pode ser um `<env>` do PHPUnit
+
+Achado ao instalar `keepsuit/laravel-opentelemetry` (16/09/2026): com
+`<env name="OTEL_SDK_DISABLED" value="true"/>` no `phpunit.xml`, a suíte inteira ficava várias
+vezes mais lenta (cada teste levando segundos) e o log enchia de
+`OpenTelemetry: [warning] Invalid boolean value "1" ...`.
+
+Causa: o PHPUnit converte os literais `"true"`/`"false"` de `<env>` em bool nativo do PHP antes de
+reexportar pro processo via `putenv()`, e `(string) true` é `"1"`. O parser de boolean do SDK OTel
+só aceita as strings `"true"`/`"false"` (case-insensitive) — ao ver `"1"` ele loga o aviso e trata
+como `false`, ou seja, como se o SDK estivesse **ligado**. O `keepsuit/laravel-opentelemetry`
+tenta corrigir isso sincronizando o valor de volta via `Env::getRepository()->set(...)` no boot,
+mas isso só atualiza o repositório interno do Dotenv (o que `env()`/`config()` do Laravel leem) —
+não o `getenv()` bruto do processo, que é o que `Sdk::isDisabled()` de fato consulta. Com o SDK
+"achando" que está ligado, ele registra instrumentação de verdade (HTTP, queries, cache, console)
+em cima de toda a suíte.
+
+Confirmado com um teste temporário chamando `\OpenTelemetry\SDK\Sdk::isDisabled()` diretamente:
+retornava `false` mesmo com `config('opentelemetry.disabled')` corretamente `true`.
+
+Correção: setar essa variável específica via `putenv()` puro num bootstrap customizado
+(`tests/bootstrap.php`), **antes** de qualquer autoload, e apontar `phpunit.xml` pra ele
+(`bootstrap="tests/bootstrap.php"`) em vez do `vendor/autoload.php` direto — nunca via `<env>` pra
+essa variável. `config/opentelemetry.php` também trava `traces.exporter`/`logs.exporter` em
+`'null'` hardcoded (não por env, pelo mesmo motivo: `OTEL_TRACES_EXPORTER=null` no `.env` vira
+`null` de PHP no `env()` do Laravel, não a string `'null'`).
+
+Se o teste de performance parecer "consertado" só porque as mensagens de warning sumiram, não
+confie — confirme rodando `\OpenTelemetry\SDK\Sdk::isDisabled()` de verdade, porque
+`config('opentelemetry.disabled')` (o valor do NOSSO lado) pode estar certo enquanto o do SDK
+continua errado.
+
 ## Antes de assumir o estado de uma PR/issue
 
 Não confie em contexto de sessão anterior (resumo de conversa, plano salvo) para saber se uma PR

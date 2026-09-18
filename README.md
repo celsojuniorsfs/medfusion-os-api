@@ -73,10 +73,13 @@ dados a partir dos eventos gravados:
 docker compose exec app php artisan event-sourcing:replay
 ```
 
-Dashboard de monitoramento ([Laravel Pulse](https://laravel.com/docs/pulse)) em
-`http://localhost:8000/pulse` — pede usuário/senha (HTTP Basic Auth) do seed
-(`ADMIN_EMAIL`/`ADMIN_PASSWORD` do `.env`). Em `local` qualquer usuário cadastrado entra; em
-produção só quem estiver em `PULSE_ALLOWED_EMAILS` (ver `docs/ambientes.md`).
+Métricas (duração/contagem de requests HTTP e de queries) são instrumentadas por
+[OpenTelemetry](https://github.com/keepsuit/laravel-opentelemetry) e empurradas por OTLP pro
+Grafana Cloud — **não há dashboard dentro da aplicação**, e o envio vem desligado por padrão
+(`OTEL_SDK_DISABLED=true` no `.env.example`). Para ligar localmente, preencha as variáveis `OTEL_*`
+do `.env` com as credenciais do seu stack no Grafana Cloud — passo a passo em
+[`docs/ambientes.md`](./docs/ambientes.md) § Monitoramento. Para inspecionar sem conta nenhuma,
+`OTEL_METRICS_EXPORTER=console` imprime as métricas no stdout.
 
 ## Documentação
 

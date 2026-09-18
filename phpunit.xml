@@ -29,7 +29,6 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
-        <env name="PULSE_ENABLED" value="false"/>
         <!--
             OTEL_SDK_DISABLED não pode ser setado aqui como <env> — ver tests/bootstrap.php pra
             saber por quê (resumo: o PHPUnit converte "true" em bool nativo e reexporta como "1", e

@@ -245,7 +245,7 @@ return [
         // Desligado: não existe Blade neste repo (API-only para o front Angular).
         Instrumentation\ViewInstrumentation::class => false,
 
-        // Desligado: Livewire só existia como dependência do Laravel Pulse, que está saindo.
+        // Desligado: Livewire só existia como dependência do Laravel Pulse, removido do projeto.
         Instrumentation\LivewireInstrumentation::class => false,
 
         Instrumentation\ConsoleInstrumentation::class => [

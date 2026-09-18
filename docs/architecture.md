@@ -223,36 +223,16 @@ em Excel), e (2) os mesmos eventos que constroem a projeção são o que um mód
 outro reagir, sem precisar inventar um "barramento de eventos" ou fila de integração separada —
 o pacote já entrega os dois com a mesma peça (`ShouldBeStored` + `Projector`/`Reactor`).
 
-## Monitoramento — Laravel Pulse é a exceção fora dos módulos
-
-O dashboard em `/pulse` ([Laravel Pulse](https://laravel.com/docs/pulse), 12/09/2026) é um pacote
-de vendor, não uma feature de negócio — não faz sentido forçá-lo dentro de `Modules/`. Duas
-consequências dessa decisão:
-
-- `resources/views/vendor/pulse/dashboard.blade.php` é o **único** Blade deste repo (que é
-  API-only pro front Angular — ver `routes/web.php`); existe só porque o Pulse é uma tela
-  server-rendered com Livewire, não porque o projeto voltou a servir HTML.
-- O gate `Gate::define('viewPulse', ...)` mora em
-  `Modules/Identity/app/Providers/IdentityServiceProvider.php::boot()`, e não em
-  `app/Providers/AppServiceProvider.php` como a documentação oficial do Pulse sugere — este
-  projeto não tem `app/` (removido de propósito, ver `bootstrap/providers.php`). Identity foi
-  escolhido por ser o módulo dono de `User` e da autenticação, a mesma coisa que o gate decide
-  sobre.
-
-Card "Servers" (CPU/memória/disco) removido do dashboard: exige o daemon `pulse:check` rodando no
-servidor, e o compute do Laravel Cloud é efêmero e gerenciado pela plataforma — não há o que medir
-aí. Detalhes de acesso (Basic Auth + allowlist de e-mail) em `docs/ambientes.md` § Monitoramento.
-
-> **16/09/2026 — em transição para OpenTelemetry.** O Pulse está sendo substituído (ver seção
-> abaixo); esta seção continua aqui só até o Pulse ser removido de fato numa PR seguinte, depois de
-> confirmar que a métrica nova chega no Grafana Cloud.
-
 ## Monitoramento — métricas por OpenTelemetry, empurradas pro Grafana Cloud
 
-Desde 16/09/2026, a observabilidade deste backend também conta com métricas instrumentadas pelo
+Desde 18/09/2026, a observabilidade deste backend é feita por métricas instrumentadas pelo
 [`keepsuit/laravel-opentelemetry`](https://github.com/keepsuit/laravel-opentelemetry) e enviadas
-por OTLP/HTTP direto pro Grafana Cloud — vai substituir o Laravel Pulse (seção acima) assim que a
-métrica for confirmada chegando de verdade no Grafana.
+por OTLP/HTTP direto pro Grafana Cloud. Substituiu o Laravel Pulse (12/09–18/09/2026), que era um
+dashboard server-rendered hospedado dentro da própria aplicação — junto com ele saíram o único
+Blade deste repo (`resources/views/vendor/pulse/dashboard.blade.php`) e o único gate fora de
+`Modules/` (`Gate::define('viewPulse', ...)`, que morava em
+`Modules/Identity/app/Providers/IdentityServiceProvider.php` por falta de um `app/Providers` neste
+projeto). A exceção documentada aqui deixou de existir, em vez de trocar de dono.
 
 **Duas métricas, de propósito** — as mesmas duas coisas que os cards do Pulse realmente respondiam:
 
@@ -284,8 +264,10 @@ atendeu a request, não precisa de nenhum dos dois. Foi o que decidiu entre Open
   `service.instance.id` **aleatório por request** — e o Grafana Cloud mapeia esse atributo pro
   label `instance`, ou seja: uma série de métrica nova a cada requisição. `config/opentelemetry.php`
   cai em `gethostname()` justamente para dar um id estável por container.
-- Pelo mesmo motivo a temporalidade é **Delta**, não Cumulative: uma série cumulativa que recomeça
-  do zero a cada request faz o `rate()` subcontar.
+- Pelo mesmo motivo, a temporalidade teoricamente correta seria **Delta** (Cumulative reiniciada a
+  cada request faz o `rate()` subcontar) — mas o gateway do Grafana Cloud recusou Delta com "Bad
+  Request" no teste de 17/09/2026. Ficamos com **Cumulative** mesmo, sabendo que a contagem vira um
+  piso, não um número exato.
 - O POST OTLP acontece no `terminate()` da request. Em produção (PHP-FPM) a resposta já foi
   entregue ao cliente antes disso; no Sail local (`php artisan serve`) não há esse mecanismo, então
   ligar o SDK localmente acrescenta o round-trip até o Grafana na latência de cada request.

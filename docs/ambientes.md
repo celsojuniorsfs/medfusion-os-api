@@ -80,8 +80,7 @@ conexão):
 | `CACHE_STORE` | `redis` — **pré-requisito de deploy** (ver aviso abaixo), não mais `database`. Nome do driver do Laravel; o servidor real anexado é Valkey, não Redis (ver `docs/architecture.md` § Cache) |
 | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | credenciais do Valkey anexado ao environment (KV Store do Laravel Cloud, ou serviço equivalente) — nome de variável `REDIS_*` por convenção do driver, aponta pro Valkey |
 | `QUEUE_CONNECTION` | `database` — usada para enfileirar o envio de e-mail/WhatsApp da OS (ver abaixo); PDF continua gerado de forma síncrona no request |
-| `PULSE_ALLOWED_EMAILS` | e-mails (separados por vírgula) autorizados a abrir `/pulse` — ver "Monitoramento" abaixo |
-| `OTEL_*` | métricas via OpenTelemetry → Grafana Cloud, em transição para substituir o Pulse — ver a tabela completa em "Monitoramento (OpenTelemetry → Grafana Cloud)" abaixo |
+| `OTEL_*` | métricas via OpenTelemetry → Grafana Cloud — ver a tabela completa em "Monitoramento (OpenTelemetry → Grafana Cloud)" abaixo |
 
 **Sobre o cache de listagens** (ver `docs/architecture.md` § Cache): o código usa
 `Cache::increment()`/`Cache::get()` — operações simples de uma chave só, suportadas por
@@ -119,29 +118,10 @@ comercial no WhatsApp Cloud API (Meta for Developers) antes desta funcionalidade
 deixa de ser gratuito** mesmo dentro da janela de 24h — custo operacional recorrente a considerar
 na proposta comercial com o cliente, não só custo de desenvolvimento.
 
-### Monitoramento (Laravel Pulse — 12/09/2026)
+### Monitoramento (OpenTelemetry → Grafana Cloud — 18/09/2026)
 
-Dashboard de APM em `/pulse`: requests lentas, queries lentas, exceções, filas, jobs lentos, cache
-e uso por usuário. Grava nas mesmas tabelas do cluster MySQL de produção (prefixo `pulse_`), sem
-recurso de infra adicional — sem Redis, sem worker/scheduler dedicado. Retenção padrão de 7 dias
-(`PULSE_STORAGE_KEEP`), com trim automático por loteria a cada ingest.
-
-Protegido por HTTP Basic Auth (contra a tabela `users` — não há tela de login de sessão neste app)
-mais o gate `viewPulse` (`Modules/Identity/app/Providers/IdentityServiceProvider.php`), que em
-produção só libera os e-mails listados em `PULSE_ALLOWED_EMAILS`. Sem conceito de papel/role na v1
-(decisão da F3), então essa allowlist por env é a autorização.
-
-O card "Servers" (CPU/memória/disco) foi removido do dashboard — depende do daemon `pulse:check`
-rodando no servidor, e o compute do Laravel Cloud é efêmero e gerenciado pela plataforma; não faz
-sentido medir isso aqui (ver `docs/architecture.md`).
-
-> **16/09/2026 — em transição para OpenTelemetry.** Ver seção abaixo; o Pulse continua documentado
-> aqui até ser removido numa PR seguinte.
-
-### Monitoramento (OpenTelemetry → Grafana Cloud — 16/09/2026)
-
-Vai substituir o Laravel Pulse (seção acima). O racional da troca está em `docs/architecture.md` §
-Monitoramento; aqui fica só o operacional.
+Substituiu o Laravel Pulse, que viveu de 12/09 a 18/09/2026. O racional da troca está em
+`docs/architecture.md` § Monitoramento; aqui fica só o operacional.
 
 **Sem recurso de infra novo**: nada de Prometheus ou Grafana self-hosted, nada de VPS, nada no
 `docker-compose.yml`. O próprio processo PHP faz um POST OTLP de saída para o Grafana Cloud ao fim
@@ -159,7 +139,7 @@ Variáveis de ambiente:
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `https://otlp-gateway-prod-<região>.grafana.net/otlp` (o SDK acrescenta `/v1/metrics`) |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` |
 | `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Basic <base64(instanceID:token)>` — **segredo**, gerado no portal do Grafana Cloud |
-| `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | `Delta` (ver abaixo) |
+| `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | `Cumulative` (ver abaixo) |
 
 #### Como conseguir as credenciais OTLP do Grafana Cloud
 
@@ -210,10 +190,10 @@ recurso (incluindo `deployment.environment.name`) ficam na métrica `target_info
 - **Cardinalidade.** `count(count by (instance) (http_server_request_duration_seconds_count))` tem
   que ficar na casa de "número de containers", estável. Se crescer a cada request,
   `OTEL_SERVICE_INSTANCE_ID`/`gethostname()` não pegou, e o free tier estoura em horas.
-- **Temporalidade.** Usamos `Delta` porque em PHP cada request é um processo novo e uma série
-  cumulativa reiniciada a cada request faz `rate()` subcontar. Se o gateway do Grafana Cloud
-  recusar delta (erro 4xx no `storage/logs/laravel.log`), volte para `Cumulative` e assuma que as
-  contagens são um piso, não um número exato — ou reavalie um collector intermediário.
+- **Temporalidade.** `Delta` seria a escolha teoricamente certa (em PHP cada request é um processo
+  novo, e uma série cumulativa reiniciada a cada request faz `rate()` subcontar), mas o gateway do
+  Grafana Cloud recusou com "Bad Request" (testado em 17/09/2026). Ficamos com `Cumulative` —
+  assuma que as contagens são um piso, não um número exato.
 
 Limitação conhecida do SDK PHP, para não perder tempo:
 `OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION=base2_exponential_bucket_histogram`

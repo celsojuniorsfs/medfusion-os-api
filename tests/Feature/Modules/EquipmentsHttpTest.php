@@ -129,6 +129,70 @@ class EquipmentsHttpTest extends TestCase
         $response->assertStatus(404);
     }
 
+    /**
+     * Endpoint pensado pro reconhecimento de equipamento por QR Code: quem chama só tem o uuid do
+     * equipamento, não o do cliente.
+     */
+    public function test_guests_cannot_show_an_equipment(): void
+    {
+        $clientId = $this->aClientId();
+        $equipmentId = $this->anEquipmentId($clientId);
+
+        $this->getJson("/api/v1/equipments/{$equipmentId}")->assertStatus(401);
+    }
+
+    public function test_shows_an_equipment_by_id_without_knowing_the_client(): void
+    {
+        $clientId = $this->aClientId();
+        $modelId = $this->anEquipmentModelId('Bisturi Elétrico', 'Marca X', 'BX-2000');
+        $accessoryId = $this->anAccessoryId('Cabo de força');
+        $user = $this->authenticatedUser();
+
+        $equipmentId = $this->actingAs($user, 'sanctum')
+            ->postJson("/api/v1/clients/{$clientId}/equipments", [
+                'equipment_model_id' => $modelId,
+                'serial_number' => 'SN-123',
+                'no_accessories' => false,
+                'accessories' => [['accessory_id' => $accessoryId, 'quantity' => 2]],
+            ])->json('data.id');
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson("/api/v1/equipments/{$equipmentId}");
+
+        $response->assertOk();
+        $response->assertJsonPath('data.id', $equipmentId);
+        $response->assertJsonPath('data.client_id', $clientId);
+        $response->assertJsonPath('data.name', 'Bisturi Elétrico');
+        $response->assertJsonCount(1, 'data.accessories');
+        $response->assertJsonPath('data.accessories.0.name', 'Cabo de força');
+    }
+
+    public function test_returns_404_for_an_unknown_equipment_id(): void
+    {
+        $response = $this->actingAs($this->authenticatedUser(), 'sanctum')
+            ->getJson('/api/v1/equipments/'.Str::uuid());
+
+        $response->assertStatus(404);
+    }
+
+    public function test_shows_a_freshly_updated_equipment_not_a_cached_one(): void
+    {
+        $clientId = $this->aClientId();
+        $equipmentId = $this->anEquipmentId($clientId, 'Bisturi');
+        $newModelId = $this->anEquipmentModelId('Monitor Multiparâmetro', 'Marca Y', 'MY-1');
+        $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')->putJson("/api/v1/clients/{$clientId}/equipments/{$equipmentId}", [
+            'equipment_model_id' => $newModelId,
+            'no_accessories' => true,
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->getJson("/api/v1/equipments/{$equipmentId}");
+
+        $response->assertOk();
+        $response->assertJsonPath('data.name', 'Monitor Multiparâmetro');
+    }
+
     public function test_creates_an_equipment_with_all_fields(): void
     {
         $clientId = $this->aClientId();

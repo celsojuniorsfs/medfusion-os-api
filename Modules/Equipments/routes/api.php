@@ -8,6 +8,9 @@ use Modules\Equipments\Presentation\Http\Controllers\EquipmentPhotoController;
 // — o ->prefix('v1') abaixo fecha o "api/v1" usado no resto do projeto.
 
 Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
+    // Fora do prefixo /clients/{id} de propósito — ver o docblock de EquipmentController::show.
+    Route::get('/equipments/{id}', [EquipmentController::class, 'show']);
+
     Route::get('/clients/{id}/equipments', [EquipmentController::class, 'index']);
     Route::post('/clients/{id}/equipments', [EquipmentController::class, 'store']);
     Route::put('/clients/{id}/equipments/{equipmentId}', [EquipmentController::class, 'update']);

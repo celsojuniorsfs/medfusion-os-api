@@ -53,6 +53,23 @@ class EquipmentController
         return response()->json($data);
     }
 
+    /**
+     * GET /equipments/{id} — fora do prefixo /clients/{clientId} de propósito: quem chega aqui só
+     * tem o uuid do equipamento (ex.: leu de um QR Code colado nele), não sabe o client_id de
+     * antemão. `EquipmentResource` já devolve `client_id`, então esta rota basta pra resolver os
+     * dois de uma vez.
+     *
+     * Sem cache (diferente do index): é busca direta por chave primária, e reaproveitar a chave de
+     * cache versionada da listagem arriscaria servir um dado desatualizado sem nenhum ganho real —
+     * ver CLAUDE.md § Cache pro histórico de bug com objeto incompleto vindo do cache.
+     */
+    public function show(string $id): JsonResponse
+    {
+        $equipment = Equipment::with('accessories.accessory')->findOrFail($id);
+
+        return response()->json(['data' => new EquipmentResource($equipment)]);
+    }
+
     public function store(EquipmentRequest $request, string $id, RegisterEquipment $registerEquipment): JsonResponse
     {
         Client::findOrFail($id);

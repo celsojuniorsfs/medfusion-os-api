@@ -185,6 +185,33 @@ class OrdersHttpTest extends TestCase
         $response->assertJsonPath('data.total', '50.00');
     }
 
+    /**
+     * Trava o contrato documentado em `docs/openapi.yaml::OrderEquipmentInput` (corrigido em
+     * 21/09/2026, ver o commit): `accessories` é texto livre e vale junto com `equipment_id` — é
+     * o snapshot desta OS, independente do catálogo estruturado de acessórios do equipamento.
+     */
+    public function test_keeps_the_free_text_accessories_when_referencing_an_existing_equipment(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $equipmentId = $this->anEquipmentId($clientId, 'Monitor Cardíaco');
+
+        $payload = [
+            'number' => 1337,
+            'date' => '2026-09-13',
+            'client_id' => $clientId,
+            'labor_cost' => 100.0,
+            'equipments' => [['equipment_id' => $equipmentId, 'accessories' => 'Cabo de força, pedal']],
+            'items' => [],
+        ];
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.equipments.0.equipment_id', $equipmentId);
+        $response->assertJsonPath('data.equipments.0.accessories', 'Cabo de força, pedal');
+    }
+
     public function test_rejects_creation_without_any_value_in_items_or_labor_cost(): void
     {
         $clientId = $this->aClientId();

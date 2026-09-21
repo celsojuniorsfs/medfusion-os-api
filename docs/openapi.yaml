@@ -1254,14 +1254,33 @@ components:
 
     OrderEquipmentInput:
       description: >
-        Referencia um equipamento já cadastrado no cliente, OU cadastra um equipamento novo
-        (que fica salvo no catálogo do cliente a partir desta OS).
+        Referencia um equipamento já cadastrado (equipment_id) OU cadastra um novo pelo nome —
+        `OrderRequest::rules()` expressa esse oneOf com `required_without` nas duas pontas, já que
+        o Laravel não tem oneOf nativo.
+
+        `accessories` aqui é TEXTO LIVRE (string, até 255 caracteres) e vale nos dois ramos — é o
+        snapshot desta OS (`order_equipments.accessories`), independente do catálogo estruturado
+        de acessórios do equipamento (api#92).
+
+        Corrigido em 21/09/2026: o oneOf anterior referenciava `EquipmentInput` no segundo ramo,
+        que desde o api#112 exige `equipment_model_id`/`no_accessories`/acessórios estruturados —
+        um payload que `POST /orders` nunca aceitou. O contrato tinha ficado pra trás depois dessa
+        mudança no catálogo.
       oneOf:
         - type: object
           required: [equipment_id]
           properties:
             equipment_id: { type: string, format: uuid }
-        - $ref: "#/components/schemas/EquipmentInput"
+            accessories: { type: ["string", "null"], maxLength: 255 }
+        - type: object
+          required: [name]
+          properties:
+            name: { type: string, maxLength: 255 }
+            brand: { type: ["string", "null"], maxLength: 255 }
+            model: { type: ["string", "null"], maxLength: 255 }
+            serial_number: { type: ["string", "null"], maxLength: 255 }
+            asset_tag: { type: ["string", "null"], maxLength: 255 }
+            accessories: { type: ["string", "null"], maxLength: 255 }
 
     OrderEquipmentSnapshot:
       type: object

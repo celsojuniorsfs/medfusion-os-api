@@ -337,6 +337,35 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /equipments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: uuid do equipamento (não do cliente)
+    get:
+      tags: [equipments]
+      summary: Busca um equipamento só pelo id, sem precisar saber o cliente
+      description: >
+        Fora do prefixo /clients/{clientId} de propósito: existe para o fluxo de reconhecimento de
+        equipamento por QR Code, onde quem chega aqui só tem o uuid do equipamento (lido da
+        etiqueta), não o client_id. O Equipment já traz client_id no payload.
+      operationId: getEquipment
+      responses:
+        "200":
+          description: Equipamento encontrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Equipment" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /clients/{id}/equipments/{equipmentId}/photos:
     parameters:
       - $ref: "#/components/parameters/ClientId"

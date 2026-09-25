@@ -2,6 +2,7 @@
 
 namespace Modules\Accessories\Infrastructure\Projectors;
 
+use Illuminate\Support\Facades\Schema;
 use Modules\Accessories\Domain\Events\AccessoryRegistered;
 use Modules\Accessories\Domain\Events\AccessoryRemoved;
 use Modules\Accessories\Domain\Events\AccessoryUpdated;
@@ -31,4 +32,14 @@ class AccessoryProjector extends Projector
     // Sem Cache::increment aqui: a listagem deste catálogo não é cacheada, e a de equipamentos —
     // que embute o nome do acessório — pertence a Equipments, módulo acima deste no grafo. Quem
     // invalida é o EquipmentProjector, reagindo a estes mesmos eventos (ver architecture.md § Cache).
+
+    /**
+     * Chamado pelo spatie antes de um `event-sourcing:replay --from=0` (ver Projectionist::replay).
+     * FKs desligadas: `equipment_accessories.accessory_id` (restrictOnDelete) pertence a
+     * Equipments, e replayar só este projector não pode falhar por causa de outro módulo.
+     */
+    public function resetState(?string $aggregateUuid = null): void
+    {
+        Schema::withoutForeignKeyConstraints(fn () => Accessory::query()->delete());
+    }
 }

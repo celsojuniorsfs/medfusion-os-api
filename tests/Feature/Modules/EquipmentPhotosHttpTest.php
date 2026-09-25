@@ -11,7 +11,6 @@ use Modules\Clients\Domain\ClientAggregate;
 use Modules\Clients\Domain\Enums\PersonType;
 use Modules\Equipments\Domain\EquipmentAggregate;
 use Modules\Equipments\Infrastructure\Projectors\EquipmentProjector;
-use Modules\Equipments\Infrastructure\ReadModels\Equipment;
 use Modules\Equipments\Infrastructure\ReadModels\EquipmentPhoto;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
@@ -231,9 +230,8 @@ class EquipmentPhotosHttpTest extends TestCase
 
         $photo = EquipmentPhoto::firstOrFail();
 
-        // Zera a projeção como um reset de verdade faria (equipment_photos some junto, por
-        // cascade) e reconstrói tudo a partir do event store.
-        Equipment::query()->delete();
+        // EquipmentProjector::resetState() zera equipment_photos/equipments antes do replay (ver
+        // api#107) e reconstrói tudo a partir do event store.
         Projectionist::replay(collect([app(EquipmentProjector::class)]));
 
         // A linha voltou (projeção reconstruída) e o arquivo continua lá.

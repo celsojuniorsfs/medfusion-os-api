@@ -148,7 +148,15 @@ por seguir o padrão de Actions.
   de cada módulo. Em vez de reconfigurar o scanner por módulo, cada `<Módulo>ServiceProvider::boot()`
   registra explicitamente o seu: `Projectionist::addProjector(FooProjector::class)`.
 - `php artisan event-sourcing:replay` reconstrói todos os read models a partir de
-  `stored_events` — útil depois de corrigir um bug de projeção ou adicionar uma coluna nova.
+  `stored_events` — útil depois de corrigir um bug de projeção ou adicionar uma coluna nova. Todo
+  projector precisa implementar `resetState(?string $aggregateUuid = null): void` (o spatie só
+  chama se o método existir), zerando as próprias tabelas ANTES de reprojetar — sem isso, o
+  replay reroda os `create()` por cima de linhas que já existem e estoura em constraint única
+  (api#107). Apagar com `Schema::withoutForeignKeyConstraints(fn () => Tabela::query()->delete())`,
+  filhos antes dos pais quando o projector escreve mais de uma tabela: FKs desligadas porque
+  tabelas de OUTROS módulos podem referenciar a tabela sendo zerada (ex.: `orders.client_id`
+  aponta pra `clients`), e replayar um projector isolado não pode falhar por causa de outro nem
+  apagar a tabela dele.
 
 ## Cache — listagens em Valkey, invalidadas por contador de versão
 

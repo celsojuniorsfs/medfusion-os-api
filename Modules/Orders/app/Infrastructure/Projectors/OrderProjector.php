@@ -168,13 +168,18 @@ class OrderProjector extends Projector
      * (`order_items`/`order_equipments` referenciam `orders`), FKs desligadas por segurança (não
      * é estritamente necessário aqui — nenhum outro módulo referencia `orders` — mas mantém o
      * mesmo padrão dos demais projectors).
+     *
+     * $aggregateUuid vem preenchido com `--aggregate-uuid=X` (replay de um agregado só) — o
+     * spatie chama isto de qualquer forma (ver Projectionist::replay), então zerar as tabelas
+     * inteiras aqui apagaria toda OS pra reconstruir só uma. Os filtros por `order_id`/`whereKey`
+     * somem quando o replay é de verdade completo (`$aggregateUuid === null`).
      */
     public function resetState(?string $aggregateUuid = null): void
     {
-        Schema::withoutForeignKeyConstraints(function () {
-            OrderItem::query()->delete();
-            OrderEquipment::query()->delete();
-            Order::query()->delete();
+        Schema::withoutForeignKeyConstraints(function () use ($aggregateUuid) {
+            OrderItem::when($aggregateUuid !== null, fn ($query) => $query->where('order_id', $aggregateUuid))->delete();
+            OrderEquipment::when($aggregateUuid !== null, fn ($query) => $query->where('order_id', $aggregateUuid))->delete();
+            Order::when($aggregateUuid !== null, fn ($query) => $query->whereKey($aggregateUuid))->delete();
         });
 
         $this->forgetCache();

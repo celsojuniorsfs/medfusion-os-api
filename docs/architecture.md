@@ -156,6 +156,18 @@ por seguir o padrão de Actions.
   tabelas de OUTROS módulos podem referenciar a tabela sendo zerada (ex.: `orders.client_id`
   aponta pra `clients`), e replayar um projector isolado não pode falhar por causa de outro nem
   apagar a tabela dele.
+  - **`$aggregateUuid` precisa ser respeitado, não só aceito.** O spatie chama
+    `resetState($aggregateUuid)` mesmo quando `--aggregate-uuid=X` é passado (replay de um
+    agregado só) — `Projectionist::replay()` só pula a chamada quando `--from` é diferente de 0,
+    nunca por causa do uuid. Um `resetState()` que ignora o parâmetro e sempre apaga a tabela
+    inteira transforma um replay pontual num apagão de produção antes de reconstruir só uma
+    linha. Sempre `Model::when($aggregateUuid !== null, fn ($q) => $q->whereKey($aggregateUuid))`
+    (ou o equivalente por FK, nas tabelas filhas) — nunca `Model::query()->delete()` incondicional.
+  - Sob `RefreshDatabase` + SQLite, `Schema::withoutForeignKeyConstraints()` não faz nada (o
+    SQLite ignora `PRAGMA foreign_keys=0` dentro de uma transação, e `RefreshDatabase` embrulha
+    cada teste numa) — o teste passa mesmo assim só porque nenhum cenário ali cruza módulos. Testar
+    de verdade a segurança entre módulos do `resetState()` exige `DatabaseMigrations`, sem
+    transação (ver `tests/Feature/EventReplayTest.php`).
 
 ## Cache — listagens em Valkey, invalidadas por contador de versão
 

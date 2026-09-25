@@ -198,11 +198,9 @@ class OrderController
     {
         return array_map(function (array $entry) use ($clientId) {
             if (! empty($entry['equipment_id'])) {
-                // Achado do code review de 25/09/2026: sem o where('client_id', ...), um
-                // equipment_id de OUTRO cliente virava 200 de qualquer forma — o GET
-                // /equipments/{id} do fluxo de QR Code (api#115) torna trivial descobrir o uuid de
-                // um equipamento sem saber de qual cliente ele é. 404 (não 403) pra equipamento de
-                // outro cliente, mesma convenção já usada em EquipmentController::update.
+                // where('client_id', ...) — sem isso um equipment_id de OUTRO cliente virava 200
+                // de qualquer forma. 404 (não 403) pra equipamento de outro cliente, mesma
+                // convenção já usada em EquipmentController::update.
                 $equipment = Equipment::where('client_id', $clientId)->findOrFail($entry['equipment_id']);
             } else {
                 // api#92: RegisterEquipment passou a receber acessórios estruturados (lista

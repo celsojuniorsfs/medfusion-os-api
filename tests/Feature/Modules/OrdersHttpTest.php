@@ -213,11 +213,9 @@ class OrdersHttpTest extends TestCase
     }
 
     /**
-     * Achado do code review de 25/09/2026: resolveEquipments() buscava o equipment_id só com
-     * findOrFail(), sem conferir se ele era do client_id da própria OS — dava pra criar uma OS pro
-     * cliente A referenciando um equipamento do cliente B. O GET /equipments/{id} do fluxo de QR
-     * Code (api#115) torna trivial descobrir um uuid de equipamento sem saber de qual cliente ele
-     * é, o que tornou esse achado mais fácil de disparar sem querer.
+     * O GET /equipments/{id} do fluxo de QR Code (api#115) torna trivial descobrir um uuid de
+     * equipamento sem saber de qual cliente ele é — resolveEquipments() precisa confirmar que o
+     * equipment_id pertence ao client_id da própria OS, não só que existe.
      */
     public function test_rejects_an_equipment_id_that_belongs_to_another_client(): void
     {

@@ -33,10 +33,9 @@ class IdentityServiceProvider extends ModuleServiceProvider
 
         Projectionist::addProjector(UserProjector::class);
 
-        // Achado do code review de 13/09/2026: POST /auth/login não tinha nenhum rate limit —
-        // sem isso, um script podia tentar senhas sem limite contra qualquer e-mail. Chave por
-        // e-mail+IP (não só IP) para não deixar um atacante rotacionar e-mails livremente nem
-        // travar todo mundo atrás do mesmo NAT/proxy por causa de um único e-mail sob ataque.
+        // Chave por e-mail+IP (não só IP) para não deixar um atacante rotacionar e-mails
+        // livremente nem travar todo mundo atrás do mesmo NAT/proxy por causa de um único e-mail
+        // sob ataque.
         RateLimiter::for('login', fn ($request) => Limit::perMinute(5)->by(
             Str::lower((string) $request->input('email')).'|'.$request->ip(),
         ));

@@ -11,9 +11,9 @@ use Modules\Clients\Domain\ClientAggregate;
  * compor leitura entre módulos.
  *
  * Equipamentos do cliente: o `cascadeOnDelete` no banco continua existindo como rede de
- * segurança, mas desde o code review de 13/09/2026 o ClientController já remove cada equipamento
- * pelo próprio agregado (RemoveEquipment) antes de chamar esta Action — cada um gera seu
- * EquipmentRemoved de verdade em stored_events, em vez de só sumir do read model.
+ * segurança, mas o ClientController já remove cada equipamento pelo próprio agregado
+ * (RemoveEquipment) antes de chamar esta Action — cada um gera seu EquipmentRemoved de verdade em
+ * stored_events, em vez de só sumir do read model.
  */
 class RemoveClient
 {

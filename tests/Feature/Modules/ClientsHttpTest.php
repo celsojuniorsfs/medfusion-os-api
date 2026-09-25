@@ -357,8 +357,6 @@ class ClientsHttpTest extends TestCase
 
     public function test_cannot_remove_a_client_with_linked_orders(): void
     {
-        // Achado do code review de 13/09/2026: esse ramo do controller (409 quando há OS
-        // vinculada) não tinha nenhum teste — só o "sem OS vinculada" (test_removes_a_client).
         $clientId = $this->aClientId();
         $user = $this->authenticatedUser();
 
@@ -375,9 +373,9 @@ class ClientsHttpTest extends TestCase
 
     public function test_removing_a_client_removes_its_equipment_through_its_own_aggregate(): void
     {
-        // Achado do code review de 13/09/2026: antes, o equipamento só sumia via
-        // cascadeOnDelete do banco, sem gerar EquipmentRemoved — sem registro em stored_events
-        // de por que ele desapareceu (ver RemoveClient.php e ClientController::destroy()).
+        // Sem esse fluxo, o equipamento sumiria só via cascadeOnDelete do banco, sem gerar
+        // EquipmentRemoved — sem registro em stored_events de por que ele desapareceu (ver
+        // RemoveClient.php e ClientController::destroy()).
         $clientId = $this->aClientId();
         $equipmentId = (string) Str::uuid();
         EquipmentAggregate::retrieve($equipmentId)
@@ -397,9 +395,8 @@ class ClientsHttpTest extends TestCase
 
     public function test_lists_clients_with_per_page_clamped_between_1_and_100(): void
     {
-        // Achado do code review de 13/09/2026: já documentado em openapi.yaml (PerPage: minimum
-        // 1, maximum 100) mas nunca aplicado no controller — per_page fora da faixa era aceito
-        // sem checagem nenhuma.
+        // Já documentado em openapi.yaml (PerPage: minimum 1, maximum 100) — cobre o clamp no
+        // controller, não só o contrato.
         $this->aClientId('Hospital São Lucas', '31233218000110');
         $this->aClientId('Clínica Vida', '11222333000181');
         $user = $this->authenticatedUser();

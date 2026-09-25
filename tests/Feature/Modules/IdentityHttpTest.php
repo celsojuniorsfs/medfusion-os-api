@@ -9,12 +9,6 @@ use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
 use Tests\TestCase;
 
-/**
- * Achado do code review de 13/09/2026: os 3 endpoints de auth (POST /auth/login, POST
- * /auth/logout, GET /auth/me) não tinham nenhum teste HTTP, só os de agregado
- * (IdentityAggregateTest). Cobre também o rate limit de login adicionado no mesmo review
- * (IdentityServiceProvider::boot(), limiter "login").
- */
 class IdentityHttpTest extends TestCase
 {
     use RefreshDatabase;

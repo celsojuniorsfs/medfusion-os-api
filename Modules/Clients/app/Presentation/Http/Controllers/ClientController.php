@@ -44,10 +44,9 @@ class ClientController
             function () use ($request) {
                 $search = $request->query('search');
 
-                // Achado do code review de 13/09/2026: já documentado em openapi.yaml (parâmetro
-                // PerPage: minimum 1, maximum 100) mas nunca aplicado aqui — um per_page=999999
-                // (ou 0/negativo) passava direto pro paginate(). Clamp deixa o código fiel ao
-                // contrato.
+                // Já documentado em openapi.yaml (parâmetro PerPage: minimum 1, maximum 100) —
+                // clamp deixa o código fiel ao contrato, sem deixar um per_page=999999 (ou
+                // 0/negativo) passar direto pro paginate().
                 $perPage = min(100, max(1, (int) $request->query('per_page', 15)));
 
                 $clients = Client::query()
@@ -112,10 +111,9 @@ class ClientController
      * Action: RemoveClient (Application) não pode importar o read model de Orders, de outro
      * módulo (ver docs/architecture.md § regra de fronteira).
      *
-     * Achado do code review de 13/09/2026: RemoveClient documentava como "lacuna conhecida" o
-     * fato de equipamentos do cliente sumirem via cascadeOnDelete do banco sem gerar
+     * Sem isso, os equipamentos do cliente sumiriam via cascadeOnDelete do banco sem gerar
      * EquipmentRemoved nenhum — stored_events (a fonte da verdade auditável, ver
-     * architecture.md) ficava sem registro de por que aqueles equipamentos desapareceram. Corrige
+     * architecture.md) ficaria sem registro de por que aqueles equipamentos desapareceram. Corrige
      * aqui, não em RemoveClient, pelo mesmo motivo do 409 acima: é a camada liberada a compor
      * módulos. Cada equipamento é removido pelo próprio agregado (RemoveEquipment, do módulo
      * Equipments — chamar a Application de outro módulo a partir da Presentation não viola a

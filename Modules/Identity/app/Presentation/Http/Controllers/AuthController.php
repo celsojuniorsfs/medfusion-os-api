@@ -12,11 +12,8 @@ use Modules\Identity\Presentation\Http\Resources\UserResource;
 class AuthController
 {
     /**
-     * POST /auth/login — sem middleware auth:sanctum (ver routes.php).
-     * Ability única "web" (decidido na F3 — sem papéis/permissões na v1).
-     *
-     * Login/logout não são comandos de domínio: consultam o read model e emitem/revogam um
-     * token Sanctum diretamente, sem passar pelo UserAggregate.
+     * POST /auth/login — login/logout não são comandos de domínio: consultam o read model e
+     * emitem/revogam um token Sanctum diretamente, sem passar pelo UserAggregate.
      */
     public function login(Request $request): JsonResponse
     {
@@ -49,9 +46,6 @@ class AuthController
         return response()->noContent();
     }
 
-    /**
-     * GET /auth/me
-     */
     public function me(Request $request): JsonResponse
     {
         return response()->json([

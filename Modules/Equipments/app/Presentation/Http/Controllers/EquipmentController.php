@@ -26,25 +26,14 @@ class EquipmentController
     {
         Client::findOrFail($id);
 
-        // Cache de listagem (ver docs/architecture.md § Cache) — versão única do módulo (não por
-        // cliente): uma escrita em qualquer equipamento invalida a listagem de todos os
-        // clientes, não só do dono do evento. EquipmentUpdated/EquipmentRemoved nem carregam
-        // client_id, então não dava pra invalidar granularmente sem uma consulta extra ao banco
-        // dentro do Projector — listas por cliente são pequenas, o cache miss a mais não pesa.
-        // Padrão 0, não 1 — ver o mesmo comentário em ClientController::index (achado ao
-        // reproduzir localmente exatamente este bug: cadastro sumindo da listagem).
+        // Cache de listagem por versão, única pro módulo inteiro, não por cliente (ver
+        // docs/architecture.md § Cache).
         $version = Cache::get('equipments:cache-version', 0);
         $data = Cache::remember(
             "equipments:index:v{$version}:{$id}",
             now()->addHour(),
-            // ->response()->getData(true) — array puro de verdade, não ->toArray() direto: ver
-            // o mesmo comentário em ClientController::index. Achado nesta chave especificamente:
-            // ->toArray() só resolve o nível de fora (a lista de recursos) — o `accessories` de
-            // EquipmentResource é um ->map() sobre uma Collection, que continua sendo uma
-            // Collection (objeto), não vira array puro sozinho. Guardado assim no cache, virava
-            // __PHP_Incomplete_Class na volta (unserialize bloqueia objeto, ver CLAUDE.md) — o
-            // equipamento voltava com accessories quebrado, o formulário de editar interpretava
-            // como "sem acessórios".
+            // getData(true), não ->toArray(): o `accessories` de EquipmentResource é um ->map()
+            // sobre Collection, que ->toArray() não resolve recursivamente (ver CLAUDE.md § Cache).
             fn () => EquipmentResource::collection(
                 Equipment::with('accessories.accessory')->where('client_id', $id)->get(),
             )->response()->getData(true),
@@ -55,13 +44,9 @@ class EquipmentController
 
     /**
      * GET /equipments/{id} — fora do prefixo /clients/{clientId} de propósito: quem chega aqui só
-     * tem o uuid do equipamento (ex.: leu de um QR Code colado nele), não sabe o client_id de
-     * antemão. `EquipmentResource` já devolve `client_id`, então esta rota basta pra resolver os
-     * dois de uma vez.
-     *
-     * Sem cache (diferente do index): é busca direta por chave primária, e reaproveitar a chave de
-     * cache versionada da listagem arriscaria servir um dado desatualizado sem nenhum ganho real —
-     * ver CLAUDE.md § Cache pro histórico de bug com objeto incompleto vindo do cache.
+     * tem o uuid do equipamento (ex.: leu de um QR Code), não sabe o client_id de antemão.
+     * `EquipmentResource` já devolve `client_id`, resolvendo os dois de uma vez. Sem cache: é
+     * busca direta por chave primária.
      */
     public function show(string $id): JsonResponse
     {
@@ -104,9 +89,6 @@ class EquipmentController
         $data = $request->validated();
         $model = EquipmentModel::findOrFail($data['equipment_model_id']);
 
-        // A mesma validação vale pra equipamento legado sem vínculo (equipment_model_id null desde
-        // sempre): editar exige escolher um modelo agora, migrando-o na hora — sem precisar de um
-        // comando de migração em lote.
         $equipment = DB::transaction(function () use ($equipmentId, $data, $model, $updateEquipment) {
             return $updateEquipment(
                 $equipmentId,
@@ -133,11 +115,8 @@ class EquipmentController
     }
 
     /**
-     * Resolve cada entrada de `accessories` — `accessory_id` existente ou `name` novo (cadastra
-     * no catálogo global na hora, mesma composição entre módulos via Presentation que
-     * OrderController::resolveEquipments já faz pra equipamento). Chamado sempre dentro de uma
-     * DB::transaction (ver store/update): se algo falhar no meio, nenhum acessório novo fica
-     * cadastrado pela metade.
+     * Resolve cada entrada de `accessories` — `accessory_id` existente ou `name` novo, cadastrado
+     * no catálogo global na hora (chamado sempre dentro da DB::transaction de store/update).
      *
      * @param  array<string, mixed>  $data  validated() do EquipmentRequest
      * @return array<int, array{accessory_id: string, quantity: int}>

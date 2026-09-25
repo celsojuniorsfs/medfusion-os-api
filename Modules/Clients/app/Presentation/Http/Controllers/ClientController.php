@@ -26,34 +26,18 @@ class ClientController
      */
     public function index(Request $request): JsonResponse
     {
-        // Cache de listagem (ver docs/architecture.md § Cache) — chave é a própria URL completa
-        // (cobre search/page/per_page de uma vez, sem listar cada parâmetro manualmente) mais a
-        // versão corrente do módulo (contador simples, não tags — ver ClientProjector::forgetCache).
-        // Invalidado por inteiro a cada evento do módulo, não por TTL: nunca serve dado
-        // desatualizado, então o TTL aqui é só um limite de segurança.
-        // Padrão 0, não 1: o primeiro Cache::increment() de verdade também produz 1 (Redis
-        // trata INCRBY numa chave inexistente como se partisse de 0) — se o padrão de leitura
-        // fosse 1, colidiria com esse primeiro valor real e uma leitura feita ANTES de
-        // qualquer escrita bateria na mesma chave que a leitura de DEPOIS da primeira escrita
-        // (achado ao reproduzir localmente: lista vazia cacheada em v1 sobrevivia ao primeiro
-        // cadastro, que também virava v1).
+        // Cache de listagem por versão (ver docs/architecture.md § Cache).
         $version = Cache::get('clients:cache-version', 0);
         $data = Cache::remember(
             "clients:index:v{$version}:".sha1($request->fullUrl()),
             now()->addHour(),
             function () use ($request) {
                 $search = $request->query('search');
-
-                // Já documentado em openapi.yaml (parâmetro PerPage: minimum 1, maximum 100) —
-                // clamp deixa o código fiel ao contrato, sem deixar um per_page=999999 (ou
-                // 0/negativo) passar direto pro paginate().
                 $perPage = min(100, max(1, (int) $request->query('per_page', 15)));
 
                 $clients = Client::query()
                     ->when($search, function ($query) use ($search) {
-                        // tax_id é gravado só com dígitos (ver migration) — buscar
-                        // "111.444.777-35" como o usuário vê na tela não bateria com
-                        // "11144477735" sem essa normalização.
+                        // tax_id é gravado só com dígitos (ver migration).
                         $digitsOnly = preg_replace('/\D/', '', $search);
 
                         $query->where(function ($q) use ($search, $digitsOnly) {
@@ -65,19 +49,12 @@ class ClientController
                             }
                         });
                     })
-                    // Mais recentes primeiro (F-mobile, 12/09/2026) — sem parâmetro de sort na
-                    // API de propósito (mesma convenção já documentada pro futuro endpoint de
-                    // Orders): a ordem certa é o próprio default, não algo que o cliente da API
-                    // precise pedir. Ressalva: como Clients é event-sourced, created_at é quando
-                    // o Projector escreveu a linha — um event-sourcing:replay reseta todo mundo
-                    // pro mesmo instante, achatando a ordem até o próximo cadastro novo.
+                    // Clients é event-sourced: um replay reseta created_at de todo mundo pro
+                    // mesmo instante, achatando esta ordem até o próximo cadastro novo.
                     ->orderBy('created_at', 'desc')
                     ->paginate($perPage);
 
-                // getData(true) — array, não stdClass: config('cache.serializable_classes') é
-                // `false` por padrão (segurança contra injeção de objeto via unserialize), o que
-                // faz QUALQUER objeto vindo do cache do Redis virar __PHP_Incomplete_Class ao
-                // ser lido de volta. Array não sofre essa restrição.
+                // getData(true) — array, não stdClass (ver CLAUDE.md § Cache).
                 return ClientResource::collection($clients)->response()->getData(true);
             },
         );
@@ -107,18 +84,11 @@ class ClientController
     }
 
     /**
-     * DELETE /clients/{id} — a checagem de OS vinculada fica aqui (Presentation), não na
-     * Action: RemoveClient (Application) não pode importar o read model de Orders, de outro
-     * módulo (ver docs/architecture.md § regra de fronteira).
-     *
-     * Sem isso, os equipamentos do cliente sumiriam via cascadeOnDelete do banco sem gerar
-     * EquipmentRemoved nenhum — stored_events (a fonte da verdade auditável, ver
-     * architecture.md) ficaria sem registro de por que aqueles equipamentos desapareceram. Corrige
-     * aqui, não em RemoveClient, pelo mesmo motivo do 409 acima: é a camada liberada a compor
-     * módulos. Cada equipamento é removido pelo próprio agregado (RemoveEquipment, do módulo
-     * Equipments — chamar a Application de outro módulo a partir da Presentation não viola a
-     * regra de fronteira, que só proíbe Domain/Application chamando outro Domain/Application)
-     * antes do cliente, numa transação: se algo falhar no meio, nada fica removido pela metade.
+     * DELETE /clients/{id} — a checagem de OS vinculada e a remoção dos equipamentos ficam aqui
+     * (Presentation), não em RemoveClient: a Application de um módulo não pode importar o read
+     * model de outro (ver docs/architecture.md § regra de fronteira). Cada equipamento é removido
+     * pelo próprio agregado (RemoveEquipment) antes do cliente, numa transação — assim gera seu
+     * próprio EquipmentRemoved em stored_events, em vez de sumir via cascadeOnDelete do banco.
      */
     public function destroy(string $id, RemoveClient $removeClient, RemoveEquipment $removeEquipment): Response|JsonResponse
     {

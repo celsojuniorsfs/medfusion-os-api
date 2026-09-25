@@ -31,12 +31,7 @@ class OrderController
      */
     public function index(Request $request): JsonResponse
     {
-        // Cache de listagem (ver docs/architecture.md § Cache) — chave é a própria URL completa,
-        // cobrindo os 6 filtros possíveis (client_id, equipment_id, status, date_from, date_to,
-        // page/per_page) sem listar cada um manualmente, mais a versão corrente do módulo
-        // (contador simples, não tags — ver OrderProjector::forgetCache). Invalidado por inteiro
-        // a cada evento do módulo, não por TTL.
-        // Padrão 0, não 1 — ver o mesmo comentário em ClientController::index.
+        // Cache de listagem por versão (ver docs/architecture.md § Cache).
         $version = Cache::get('orders:cache-version', 0);
         $data = Cache::remember(
             "orders:index:v{$version}:".sha1($request->fullUrl()),
@@ -57,8 +52,7 @@ class OrderController
                     ->orderBy('date', 'desc')
                     ->paginate($perPage);
 
-                // getData(true) — array, não stdClass: ver o mesmo comentário em
-                // ClientController::index.
+                // getData(true) — array, não stdClass (ver CLAUDE.md § Cache).
                 return OrderResource::collection($orders)->response()->getData(true);
             },
         );
@@ -104,9 +98,8 @@ class OrderController
             return $order;
         });
 
-        // fresh(), não load(): load() só recarrega as relações — os itens/equipamentos anexados
-        // depois de $openOrder() também atualizaram total via OrderProjector::onOrderItemAdded(),
-        // mas essa mudança nunca chega aos atributos escalares já carregados em $order.
+        // fresh(), não load(): load() só recarrega relações, e o total já mudou via
+        // OrderProjector::onOrderItemAdded() desde que $order foi carregado.
         return response()->json(['data' => new OrderResource($order->fresh(self::WITH))], 201);
     }
 
@@ -116,11 +109,9 @@ class OrderController
     }
 
     /**
-     * PUT /orders/{id} — substitui equipamentos e peças por completo (ver
-     * OrderAggregate::clearEquipments()/clearItems()). Confere se a OS existe antes de chamar
-     * UpdateOrder: OrderAggregate::retrieve() de um uuid desconhecido cria um agregado novo em
-     * branco silenciosamente (comportamento do spatie) em vez de falhar — sem este findOrFail(),
-     * um PUT pra um id inexistente geraria um stored_events órfão, sem nenhuma linha em `orders`.
+     * PUT /orders/{id} — substitui equipamentos e peças por completo. O findOrFail() é necessário
+     * porque OrderAggregate::retrieve() de um uuid desconhecido cria um agregado em branco em vez
+     * de falhar, o que geraria um stored_events órfão sem nenhuma linha em `orders`.
      */
     public function update(OrderRequest $request, string $id, OrderService $orderService, UpdateOrder $updateOrder): JsonResponse
     {
@@ -159,9 +150,8 @@ class OrderController
     }
 
     /**
-     * PATCH /orders/{id}/status — só o campo `status`, sem FormRequest à parte (mesmo padrão já
-     * usado pra endpoints pequenos deste repo). InvalidOrderStatusTransition define o próprio
-     * render() (422 no formato ValidationErrorBody) — nada a capturar aqui.
+     * PATCH /orders/{id}/status — só o campo `status`, sem FormRequest à parte.
+     * InvalidOrderStatusTransition já define o próprio render() (422); nada a capturar aqui.
      */
     public function updateStatus(Request $request, string $id, ChangeOrderStatus $changeOrderStatus): JsonResponse
     {
@@ -186,10 +176,9 @@ class OrderController
     }
 
     /**
-     * Resolve cada entrada de `equipments` do payload pro formato que AttachEquipmentToOrder
-     * espera: se vier `equipment_id`, busca o cadastro atual pra tirar o snapshot; senão,
-     * cadastra um equipamento novo no catálogo do cliente (RegisterEquipment, módulo Equipments
-     * — Presentation pode compor entre módulos, ver docs/architecture.md).
+     * Resolve cada entrada de `equipments` pro formato que AttachEquipmentToOrder espera: com
+     * `equipment_id`, busca o cadastro atual pra tirar o snapshot; senão, cadastra um equipamento
+     * novo no catálogo do cliente.
      *
      * @param  array<int, array<string, mixed>>  $equipments
      * @return array<int, array<string, mixed>>
@@ -198,17 +187,13 @@ class OrderController
     {
         return array_map(function (array $entry) use ($clientId) {
             if (! empty($entry['equipment_id'])) {
-                // where('client_id', ...) — sem isso um equipment_id de OUTRO cliente virava 200
-                // de qualquer forma. 404 (não 403) pra equipamento de outro cliente, mesma
-                // convenção já usada em EquipmentController::update.
+                // 404 (não 403) pra equipamento de outro cliente — sem o where('client_id', ...),
+                // um equipment_id de OUTRO cliente virava 200 de qualquer forma.
                 $equipment = Equipment::where('client_id', $clientId)->findOrFail($entry['equipment_id']);
             } else {
-                // api#92: RegisterEquipment passou a receber acessórios estruturados (lista
-                // ligada ao catálogo global), não mais o texto livre que este formulário de OS
-                // ainda aceita — um equipamento novo cadastrado implicitamente por uma OS entra
-                // sem nenhum acessório estruturado no catálogo (o técnico ajusta depois, na tela
-                // de equipamentos do cliente, se precisar). O texto de $entry['accessories']
-                // continua indo pro snapshot desta OS logo abaixo, sem depender do catálogo.
+                // Um equipamento cadastrado implicitamente aqui entra sem acessório estruturado
+                // no catálogo (o técnico ajusta depois); $entry['accessories'] é texto livre que
+                // vai só pro snapshot desta OS, abaixo.
                 $equipment = app(RegisterEquipment::class)(
                     $clientId,
                     $entry['name'],
@@ -226,9 +211,6 @@ class OrderController
                 'model' => $equipment->model,
                 'serial_number' => $equipment->serial_number,
                 'asset_tag' => $equipment->asset_tag,
-                // Snapshot próprio desta OS (ver OrderEquipmentAttached) — independente do
-                // catálogo estruturado de acessórios do equipamento (api#92). Vem sempre do que
-                // foi digitado nesta OS, não do que está cadastrado no equipamento.
                 'accessories' => $entry['accessories'] ?? null,
             ];
         }, $equipments);

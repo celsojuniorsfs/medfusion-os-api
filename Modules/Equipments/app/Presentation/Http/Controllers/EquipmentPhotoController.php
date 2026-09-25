@@ -15,13 +15,8 @@ use Modules\Equipments\Presentation\Http\Resources\EquipmentPhotoResource;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
- * Fotos do equipamento (api#102) — pedido do cliente pra registrar como o aparelho chegou e não ter
- * divergência na devolução.
- *
- * Endpoints próprios, fora da listagem de equipamentos, de propósito: a listagem é cacheada, e
- * acrescentar fotos ali significaria (a) mais objeto aninhado dentro de um payload serializado, que
- * é a classe de bug do api#99, e (b) URL assinada de validade curta congelada por uma hora no
- * cache. Aqui nada é cacheado e a URL é sempre nova.
+ * Fotos do equipamento — endpoints próprios, fora da listagem de equipamentos: a listagem é
+ * cacheada, e uma URL assinada de validade curta não pode ficar congelada no cache por uma hora.
  */
 class EquipmentPhotoController
 {
@@ -44,10 +39,8 @@ class EquipmentPhotoController
 
         $file = $request->file('photo');
 
-        // O arquivo é gravado ANTES do evento: o event store guarda a referência, nunca o binário
-        // (ver EquipmentPhotoAdded). Se a transação abaixo falhar, sobra um arquivo órfão no disco
-        // — preferível ao contrário (evento apontando pra arquivo que não existe, que quebraria a
-        // tela toda vez que alguém abrisse o equipamento).
+        // Gravado ANTES do evento: um arquivo órfão no disco (se a transação abaixo falhar) é
+        // preferível a um evento apontando pra arquivo inexistente.
         $path = $file->store("equipments/{$equipmentId}", config('filesystems.default'));
 
         $photo = DB::transaction(fn () => $addEquipmentPhoto(
@@ -69,8 +62,7 @@ class EquipmentPhotoController
     ): Response {
         $this->findEquipmentOrFail($id, $equipmentId);
 
-        // Escopado pelo equipamento: uma foto de outro equipamento vira 404, não 403 — mesma
-        // decisão já tomada no EquipmentController::update.
+        // Escopado pelo equipamento: uma foto de outro equipamento vira 404, não 403.
         $photo = EquipmentPhoto::where('equipment_id', $equipmentId)->findOrFail($photoId);
 
         $removeEquipmentPhoto($equipmentId, $photoId, $photo->path);

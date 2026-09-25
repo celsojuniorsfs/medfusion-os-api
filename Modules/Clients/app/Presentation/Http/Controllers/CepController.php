@@ -8,12 +8,9 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 
 /**
- * GET /cep/{cep} — proxy pro ViaCEP (gratuito, sem autenticação) com cache. Sem
- * aggregate/evento de propósito: não é estado de domínio nosso, é uma consulta a um serviço
- * externo (ver docs/architecture.md § Cache) — por isso mora aqui como um controller simples,
- * fora do padrão event-sourced do resto do módulo, e usa `Cache::remember` (sem tag): não há
- * evento nosso que invalide isto, só o TTL longo, já que endereço de CEP não muda por causa de
- * nada que a Med Fusion faça.
+ * GET /cep/{cep} — proxy pro ViaCEP (gratuito, sem autenticação) com cache. Consulta a um
+ * serviço externo, não estado de domínio nosso — por isso fica fora do padrão event-sourced do
+ * resto do módulo, sem invalidação por evento (só o TTL longo).
  */
 class CepController
 {
@@ -24,8 +21,7 @@ class CepController
         Validator::make(['cep' => $digits], ['cep' => ['required', 'digits:8']])->validate();
 
         // TTL de 30 dias — dado de referência externo, quase estático. Devolve o mesmo shape do
-        // ViaCEP (logradouro, localidade, uf, erro, ...) sem reformatar: o frontend já sabe ler
-        // esse formato (era o que chamava viacep.com.br direto antes deste proxy existir).
+        // ViaCEP sem reformatar.
         $data = Cache::remember(
             "cep:{$digits}",
             now()->addDays(30),

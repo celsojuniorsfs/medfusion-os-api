@@ -3,6 +3,7 @@
 namespace Modules\Equipments\Infrastructure\Projectors;
 
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Modules\Accessories\Domain\Events\AccessoryRemoved;
 use Modules\Accessories\Domain\Events\AccessoryUpdated;
@@ -191,6 +192,25 @@ class EquipmentProjector extends Projector
     private function forgetCache(): void
     {
         Cache::increment('equipments:cache-version');
+    }
+
+    /**
+     * Chamado pelo spatie antes de um `event-sourcing:replay --from=0` (ver Projectionist::replay)
+     * — sem isso, `onEquipmentRegistered` estoura ao recriar uma linha que já existe. Filhos antes
+     * do pai (`equipment_photos`/`equipment_accessories` referenciam `equipments`), e FKs
+     * desligadas: `order_equipments.equipment_id` (nullOnDelete) pertence a Orders, e replayar só
+     * este projector não pode falhar por causa de outro módulo nem apagar a tabela dele —
+     * `OrderProjector::resetState()` cuida da própria tabela quando o replay inclui os dois.
+     */
+    public function resetState(?string $aggregateUuid = null): void
+    {
+        Schema::withoutForeignKeyConstraints(function () {
+            EquipmentPhoto::query()->delete();
+            EquipmentAccessory::query()->delete();
+            Equipment::query()->delete();
+        });
+
+        $this->forgetCache();
     }
 
     /**

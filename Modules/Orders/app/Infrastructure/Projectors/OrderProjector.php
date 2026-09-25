@@ -3,6 +3,7 @@
 namespace Modules\Orders\Infrastructure\Projectors;
 
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use Modules\Orders\Domain\Events\OrderEquipmentAttached;
 use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
 use Modules\Orders\Domain\Events\OrderItemAdded;
@@ -150,5 +151,23 @@ class OrderProjector extends Projector
     private function forgetCache(): void
     {
         Cache::increment('orders:cache-version');
+    }
+
+    /**
+     * Chamado pelo spatie antes de um `event-sourcing:replay --from=0` (ver Projectionist::replay)
+     * — sem isso, `onOrderOpened` estoura por `number` duplicado. Filhos antes do pai
+     * (`order_items`/`order_equipments` referenciam `orders`), FKs desligadas por segurança (não
+     * é estritamente necessário aqui — nenhum outro módulo referencia `orders` — mas mantém o
+     * mesmo padrão dos demais projectors).
+     */
+    public function resetState(?string $aggregateUuid = null): void
+    {
+        Schema::withoutForeignKeyConstraints(function () {
+            OrderItem::query()->delete();
+            OrderEquipment::query()->delete();
+            Order::query()->delete();
+        });
+
+        $this->forgetCache();
     }
 }

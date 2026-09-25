@@ -3,6 +3,7 @@
 namespace Modules\Clients\Infrastructure\Projectors;
 
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use Modules\Clients\Domain\Events\ClientRegistered;
 use Modules\Clients\Domain\Events\ClientRemoved;
 use Modules\Clients\Domain\Events\ClientUpdated;
@@ -72,5 +73,18 @@ class ClientProjector extends Projector
     private function forgetCache(): void
     {
         Cache::increment('clients:cache-version');
+    }
+
+    /**
+     * Chamado pelo spatie antes de um `event-sourcing:replay --from=0` (ver Projectionist::replay)
+     * — sem isso, `onClientRegistered` estoura por `tax_id` duplicado. FKs desligadas: `equipments`
+     * (cascadeOnDelete) e `orders` (restrictOnDelete) apontam pra `clients`, mas pertencem a outros
+     * projectors — replayar só este não pode falhar nem apagar a tabela de outro módulo.
+     */
+    public function resetState(?string $aggregateUuid = null): void
+    {
+        Schema::withoutForeignKeyConstraints(fn () => Client::query()->delete());
+
+        $this->forgetCache();
     }
 }

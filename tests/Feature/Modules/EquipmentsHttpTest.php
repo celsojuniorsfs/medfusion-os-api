@@ -897,7 +897,6 @@ class EquipmentsHttpTest extends TestCase
         $modelId = $this->anEquipmentModelId('Utrassom', 'Sonopus', 'XYZ-100');
         app(UpdateEquipmentModel::class)($modelId, 'Ultrassom', 'Sonopus', 'XYZ-100');
 
-        Equipment::query()->delete();
         Projectionist::replay(collect([app(EquipmentProjector::class)]));
 
         $this->assertDatabaseHas('equipments', [
@@ -968,7 +967,6 @@ class EquipmentsHttpTest extends TestCase
             ->update('Aparelho Renomeado', 'Marca Antiga', 'MA-1', 'SN-ANTIGO', null, [])
             ->persist();
 
-        Equipment::query()->delete();
         Projectionist::replay(collect([app(EquipmentProjector::class)]));
 
         $this->assertDatabaseHas('equipments', ['id' => $equipmentId, 'name' => 'Aparelho Renomeado']);

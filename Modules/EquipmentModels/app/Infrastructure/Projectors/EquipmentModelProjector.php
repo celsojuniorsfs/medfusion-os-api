@@ -48,9 +48,16 @@ class EquipmentModelProjector extends Projector
      * Chamado pelo spatie antes de um `event-sourcing:replay --from=0` (ver Projectionist::replay).
      * FKs desligadas: `equipments.equipment_model_id` (restrictOnDelete) pertence a Equipments, e
      * replayar só este projector não pode falhar por causa de outro módulo.
+     *
+     * $aggregateUuid vem preenchido com `--aggregate-uuid=X` (replay de um agregado só) — o
+     * spatie chama isto de qualquer forma (ver Projectionist::replay), então zerar a tabela
+     * inteira aqui apagaria todo mundo pra reconstruir só um modelo. Só o `where('id', ...)`
+     * some quando o replay é de verdade completo (`$aggregateUuid === null`).
      */
     public function resetState(?string $aggregateUuid = null): void
     {
-        Schema::withoutForeignKeyConstraints(fn () => EquipmentModel::query()->delete());
+        Schema::withoutForeignKeyConstraints(function () use ($aggregateUuid) {
+            EquipmentModel::when($aggregateUuid !== null, fn ($query) => $query->whereKey($aggregateUuid))->delete();
+        });
     }
 }

@@ -15,10 +15,8 @@ use Modules\Equipments\Infrastructure\ReadModels\Equipment;
 class EquipmentModelController
 {
     /**
-     * GET /equipment-models — catálogo global, sem paginação nem busca no servidor (mesma decisão
-     * já tomada pro catálogo de acessórios e pro catálogo de equipamentos do cliente): a lista
-     * inteira volta de uma vez, busca é filtro client-side no seletor do front. Sem cache também,
-     * igual AccessoryController::index — tabela pequena e append-only.
+     * GET /equipment-models — catálogo global, sem paginação, busca no servidor, nem cache: lista
+     * inteira, filtro client-side no seletor do front (mesma decisão de AccessoryController::index).
      */
     public function index(): JsonResponse
     {
@@ -53,18 +51,11 @@ class EquipmentModelController
     }
 
     /**
-     * DELETE /equipment-models/{id} — 409 quando algum equipamento usa este modelo. Mesmo padrão do
-     * 409 de ClientController::destroy (cliente com OS vinculada), inclusive a consulta ao read
-     * model de outro módulo aqui na Presentation, que é a camada liberada a compor leitura entre
-     * módulos (ver docs/architecture.md § regra de fronteira).
-     *
-     * A checagem precisa vir ANTES de chamar a Action, e não depois via erro do banco: `persist()`
-     * grava o evento em `stored_events` e SÓ ENTÃO roda o projector, onde a FK `restrictOnDelete`
-     * estouraria. Verificado na marra — recusar pelo erro do banco deixa um EquipmentModelRemoved
-     * gravado enquanto a linha continua existindo, ou seja, o agregado passa a se achar removido e
-     * um replay apagaria um modelo que a produção ainda tem.
-     *
-     * A FK continua valendo como rede de segurança pra corrida entre duas requisições.
+     * DELETE /equipment-models/{id} — 409 quando algum equipamento usa este modelo. A checagem
+     * precisa vir ANTES de chamar a Action, não depois via erro do banco: `persist()` grava o
+     * evento antes do projector rodar, então recusar pela FK deixaria um EquipmentModelRemoved
+     * gravado com a linha ainda existindo (ver CLAUDE.md § Recusar uma remoção). A FK continua
+     * valendo como rede de segurança pra corrida entre duas requisições.
      */
     public function destroy(string $id, RemoveEquipmentModel $removeEquipmentModel): Response|JsonResponse
     {

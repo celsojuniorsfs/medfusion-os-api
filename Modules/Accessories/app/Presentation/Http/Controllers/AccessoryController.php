@@ -15,9 +15,8 @@ use Modules\Equipments\Infrastructure\ReadModels\EquipmentAccessory;
 class AccessoryController
 {
     /**
-     * GET /accessories — catálogo global, sem paginação nem busca no servidor (mesma decisão já
-     * tomada pro catálogo de equipamentos do cliente, ver EquipmentController::index): a lista
-     * inteira volta de uma vez, busca é filtro client-side no seletor do front.
+     * GET /accessories — catálogo global, sem paginação, busca no servidor, nem cache: lista
+     * inteira, filtro client-side no seletor do front.
      */
     public function index(): JsonResponse
     {
@@ -34,9 +33,8 @@ class AccessoryController
     }
 
     /**
-     * PUT /accessories/{id} — corrigir o nome aqui já aparece em todo equipamento que usa o
-     * acessório, porque o nome nunca foi copiado: `equipment_accessories` guarda só o id. O que
-     * precisa acontecer é invalidar a listagem cacheada, e disso cuida o EquipmentProjector.
+     * PUT /accessories/{id} — o nome nunca é copiado (`equipment_accessories` guarda só o id), então
+     * corrigir aqui já aparece em todo equipamento que usa o acessório.
      */
     public function update(AccessoryRequest $request, string $id, UpdateAccessory $updateAccessory): JsonResponse
     {
@@ -48,12 +46,8 @@ class AccessoryController
     }
 
     /**
-     * DELETE /accessories/{id} — 409 quando algum equipamento usa este acessório.
-     *
-     * A checagem vem ANTES de chamar a Action, nunca pela violação de FK: `persist()` grava o evento
-     * antes de o projector rodar, então recusar pelo erro do banco deixaria um AccessoryRemoved
-     * gravado com a linha ainda existindo (ver CLAUDE.md § Recusar uma remoção). Consultar o read
-     * model de Equipments aqui na Presentation é o padrão já usado por ClientController.
+     * DELETE /accessories/{id} — 409 quando algum equipamento usa este acessório. A checagem vem
+     * ANTES de chamar a Action, nunca pela violação de FK (ver CLAUDE.md § Recusar uma remoção).
      */
     public function destroy(string $id, RemoveAccessory $removeAccessory): Response|JsonResponse
     {

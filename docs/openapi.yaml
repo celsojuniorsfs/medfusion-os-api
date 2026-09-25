@@ -725,10 +725,11 @@ paths:
       tags: [orders]
       summary: Cria uma OS com equipamentos e peças aninhados
       description: >
-        Ao criar a OS com sucesso, o PDF é gerado e uma cópia é enviada automaticamente ao
-        cliente por e-mail e por WhatsApp — sem ação adicional do técnico. Equipamentos
-        informados sem equipment_id são cadastrados no catálogo do cliente nesta mesma chamada
-        (ver OrderEquipmentInput).
+        Equipamentos informados sem equipment_id são cadastrados no catálogo do cliente nesta
+        mesma chamada (ver OrderEquipmentInput). O PDF não é gerado automaticamente — o técnico
+        solicita via POST /orders/{id}/pdf (ver abaixo). A geração automática + notificação por
+        e-mail/WhatsApp na criação chega com o api#70, que ainda depende da verificação da conta
+        Meta do cliente.
       operationId: createOrder
       requestBody:
         required: true
@@ -868,6 +869,9 @@ paths:
     post:
       tags: [orders]
       summary: Gera o PDF da OS e o envia ao Object Storage
+      description: >
+        Cada chamada gera um arquivo novo — nenhum PDF anterior é sobrescrito ou apagado (guarda
+        todos, sem limite de retenção por enquanto). GET devolve sempre o mais recente.
       operationId: generateOrderPdf
       responses:
         "200":
@@ -896,6 +900,26 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /orders/{id}/pdf/download:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      tags: [orders]
+      summary: Baixa o PDF mais recente da OS
+      description: >
+        Fora do auth:sanctum de propósito, mesmo padrão de GET /equipment-photos/{photoId}: a
+        credencial é a assinatura da URL (query string `signature`/`expires`), com validade de 30
+        minutos, gerada por OrderPdf.url. Nunca chamar esta rota direto sem antes passar por
+        POST/GET /orders/{id}/pdf — a URL é sempre nova.
+      operationId: downloadOrderPdf
+      responses:
+        "200":
+          description: Arquivo PDF (application/pdf)
+        "403":
+          description: Assinatura ausente, inválida ou expirada
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /orders/{id}/notify:
     parameters:
@@ -1353,7 +1377,7 @@ components:
           {
             type: string,
             format: uri,
-            description: "URL assinada do Object Storage",
+            description: "URL assinada da API (30 min), ver GET /orders/{id}/pdf/download",
           }
         generated_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time }
@@ -1398,6 +1422,12 @@ components:
         total: { type: number, format: float }
         certificate_number:
           { type: ["string", "null"], description: "Nº do certificado" }
+        pdf_generated_at:
+          {
+            type: ["string", "null"],
+            format: date-time,
+            description: "Quando o PDF mais recente foi gerado (null se nunca foi). Ver GET /orders/{id}/pdf pra baixar",
+          }
         equipments:
           type: array
           items: { $ref: "#/components/schemas/OrderEquipmentSnapshot" }

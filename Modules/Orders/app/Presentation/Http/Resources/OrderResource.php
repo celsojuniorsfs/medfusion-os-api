@@ -41,6 +41,7 @@ class OrderResource extends JsonResource
             'labor_cost' => $this->labor_cost,
             'total' => $this->total,
             'certificate_number' => $this->certificate_number,
+            'pdf_generated_at' => $this->pdf_generated_at,
             'equipments' => OrderEquipmentResource::collection($this->whenLoaded('equipments')),
             'items' => OrderItemResource::collection($this->whenLoaded('items')),
             'created_at' => $this->created_at,

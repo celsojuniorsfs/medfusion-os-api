@@ -23,6 +23,7 @@ use Modules\Identity\Infrastructure\ReadModels\User;
     'reported_defect', 'maintenance_plan', 'notes',
     'payment_method', 'warranty_period', 'proposal_validity',
     'labor_cost', 'total', 'status', 'certificate_number',
+    'pdf_path', 'pdf_generated_at',
 ])]
 class Order extends Model
 {

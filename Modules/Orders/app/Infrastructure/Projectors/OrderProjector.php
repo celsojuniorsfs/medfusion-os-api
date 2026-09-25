@@ -9,6 +9,7 @@ use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
 use Modules\Orders\Domain\Events\OrderItemAdded;
 use Modules\Orders\Domain\Events\OrderItemsCleared;
 use Modules\Orders\Domain\Events\OrderOpened;
+use Modules\Orders\Domain\Events\OrderPdfGenerated;
 use Modules\Orders\Domain\Events\OrderStatusChanged;
 use Modules\Orders\Domain\Events\OrderUpdated;
 use Modules\Orders\Infrastructure\ReadModels\Order;
@@ -121,6 +122,14 @@ class OrderProjector extends Projector
         ]);
 
         $this->forgetCache();
+    }
+
+    public function onOrderPdfGenerated(OrderPdfGenerated $event): void
+    {
+        Order::whereKey($event->aggregateRootUuid())->update([
+            'pdf_path' => $event->path,
+            'pdf_generated_at' => $event->generatedAt,
+        ]);
     }
 
     public function onOrderEquipmentsCleared(OrderEquipmentsCleared $event): void

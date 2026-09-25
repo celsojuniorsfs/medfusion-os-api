@@ -109,8 +109,7 @@ A máquina de 9 estados da OS (`docs/api-conventions.md` § Status da OS) mora e
 `OrderStatus::allowedNextStatuses()` — o `OrderAggregate::changeStatus()` valida a transição e
 lança `InvalidOrderStatusTransition` se ela não estiver na tabela.
 
-Eventos futuros (fora desta sessão — CRUD, PDF e notificação ainda não existem):
-`OrderPdfGenerated`, `OrderNotified`.
+Evento futuro (fora desta sessão — notificação ainda não existe): `OrderNotified`.
 
 ## Camada de orquestração — Actions, sem command bus
 

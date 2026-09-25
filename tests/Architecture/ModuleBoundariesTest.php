@@ -47,14 +47,13 @@ class ModuleBoundariesTest extends TestCase
                     foreach ($matches[1] as $imported) {
                         $importedModule = explode('\\', $imported)[1] ?? null;
 
-                        // Comparação sem diferenciar caixa: achado do code review de 13/09/2026
-                        // — em filesystems case-insensitive (Windows/NTFS), o nome real do
-                        // diretório do módulo às vezes destoa em caixa do namespace PSR-4 (ex.:
-                        // `Modules/orders` no disco vs. `Modules\Orders\...` no `use`), mesmo com
-                        // o Git rastreando o caminho certo. Isso fazia todo módulo se acusar de
-                        // "importar a si mesmo" de outro módulo. Dois módulos DIFERENTES nunca
-                        // colidem por caixa (nomes distintos), então isso não mascara violação
-                        // de verdade.
+                        // Comparação sem diferenciar caixa — em filesystems case-insensitive
+                        // (Windows/NTFS), o nome real do diretório do módulo às vezes destoa em
+                        // caixa do namespace PSR-4 (ex.: `Modules/orders` no disco vs.
+                        // `Modules\Orders\...` no `use`), mesmo com o Git rastreando o caminho
+                        // certo. Isso fazia todo módulo se acusar de "importar a si mesmo" de
+                        // outro módulo. Dois módulos DIFERENTES nunca colidem por caixa (nomes
+                        // distintos), então isso não mascara violação de verdade.
                         if ($importedModule === null || strcasecmp($importedModule, $module) === 0) {
                             continue;
                         }

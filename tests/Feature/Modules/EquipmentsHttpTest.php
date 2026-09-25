@@ -182,6 +182,9 @@ class EquipmentsHttpTest extends TestCase
         $newModelId = $this->anEquipmentModelId('Monitor Multiparâmetro', 'Marca Y', 'MY-1');
         $user = $this->authenticatedUser();
 
+        $this->actingAs($user, 'sanctum')->getJson("/api/v1/equipments/{$equipmentId}")
+            ->assertJsonPath('data.name', 'Bisturi');
+
         $this->actingAs($user, 'sanctum')->putJson("/api/v1/clients/{$clientId}/equipments/{$equipmentId}", [
             'equipment_model_id' => $newModelId,
             'no_accessories' => true,

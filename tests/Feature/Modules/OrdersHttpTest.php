@@ -30,14 +30,14 @@ class OrdersHttpTest extends TestCase
         return User::findOrFail($uuid);
     }
 
-    private function aClientId(): string
+    private function aClientId(string $taxId = '31233218000110'): string
     {
         $uuid = (string) Str::uuid();
         ClientAggregate::retrieve($uuid)
             ->register(
                 personType: PersonType::Company,
                 name: 'Hospital São Lucas',
-                taxId: '31233218000110',
+                taxId: $taxId,
                 tradeName: null,
                 stateRegistration: null,
                 requester: null,
@@ -210,6 +210,32 @@ class OrdersHttpTest extends TestCase
         $response->assertCreated();
         $response->assertJsonPath('data.equipments.0.equipment_id', $equipmentId);
         $response->assertJsonPath('data.equipments.0.accessories', 'Cabo de força, pedal');
+    }
+
+    /**
+     * O GET /equipments/{id} do fluxo de QR Code (api#115) torna trivial descobrir um uuid de
+     * equipamento sem saber de qual cliente ele é — resolveEquipments() precisa confirmar que o
+     * equipment_id pertence ao client_id da própria OS, não só que existe.
+     */
+    public function test_rejects_an_equipment_id_that_belongs_to_another_client(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientA = $this->aClientId();
+        $clientB = $this->aClientId('11222333000181');
+        $equipmentOfClientB = $this->anEquipmentId($clientB, 'Monitor do Cliente B');
+
+        $payload = [
+            'number' => 1337,
+            'date' => '2026-09-13',
+            'client_id' => $clientA,
+            'labor_cost' => 100.0,
+            'equipments' => [['equipment_id' => $equipmentOfClientB]],
+            'items' => [],
+        ];
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertStatus(404);
     }
 
     public function test_rejects_creation_without_any_value_in_items_or_labor_cost(): void

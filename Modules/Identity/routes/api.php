@@ -7,8 +7,7 @@ use Modules\Identity\Presentation\Http\Controllers\AuthController;
 // — o ->prefix('v1') abaixo fecha o "api/v1" usado no resto do projeto.
 
 Route::prefix('v1')->group(function () {
-    // throttle:login — limiter definido em IdentityServiceProvider::boot() (5/min por
-    // e-mail+IP). Achado do code review de 13/09/2026: não havia nenhum rate limit aqui.
+    // throttle:login — limiter definido em IdentityServiceProvider::boot() (5/min por e-mail+IP).
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
 
     Route::middleware('auth:sanctum')->group(function () {

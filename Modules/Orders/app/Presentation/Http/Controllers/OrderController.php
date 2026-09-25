@@ -198,7 +198,10 @@ class OrderController
     {
         return array_map(function (array $entry) use ($clientId) {
             if (! empty($entry['equipment_id'])) {
-                $equipment = Equipment::findOrFail($entry['equipment_id']);
+                // where('client_id', ...) — sem isso um equipment_id de OUTRO cliente virava 200
+                // de qualquer forma. 404 (não 403) pra equipamento de outro cliente, mesma
+                // convenção já usada em EquipmentController::update.
+                $equipment = Equipment::where('client_id', $clientId)->findOrFail($entry['equipment_id']);
             } else {
                 // api#92: RegisterEquipment passou a receber acessórios estruturados (lista
                 // ligada ao catálogo global), não mais o texto livre que este formulário de OS

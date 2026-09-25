@@ -26,10 +26,9 @@ return [
     ],
 
     // Laravel não faz wildcard em allowed_origins — os previews da Vercel
-    // (medfusion-os-web-*.vercel.app) precisam do padrão de regex abaixo. Achado do code review
-    // de 13/09/2026: o padrão antigo (`.*\.vercel\.app`) liberava QUALQUER app hospedado na
-    // Vercel, não só os previews deste projeto — mais aberto do que o pretendido (ver
-    // ambientes.md § CORS). Restrito ao prefixo do nome do projeto ("medfusion-os-web"), que é
+    // (medfusion-os-web-*.vercel.app) precisam do padrão de regex abaixo. Restrito ao prefixo do
+    // nome do projeto ("medfusion-os-web"), não `.*\.vercel\.app` genérico (que liberaria
+    // QUALQUER app hospedado na Vercel, não só os previews deste — ver ambientes.md § CORS). É
     // como a Vercel nomeia tanto o alias de produção (`medfusion-os-web.vercel.app`) quanto cada
     // preview (`medfusion-os-web-<hash-ou-branch>-<time>.vercel.app`).
     'allowed_origins_patterns' => [

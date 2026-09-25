@@ -175,12 +175,21 @@ class EquipmentsHttpTest extends TestCase
         $response->assertStatus(404);
     }
 
+    /**
+     * Achado do code review de 25/09/2026: a versão anterior deste teste nunca fazia um GET antes
+     * do PUT, então não provava nada sobre cache — passaria igual mesmo se show() um dia passasse
+     * a cachear a resposta. Agora lê ANTES (o valor que ficaria "preso" se houvesse cache), muda,
+     * e lê DE NOVO conferindo que o valor mudou.
+     */
     public function test_shows_a_freshly_updated_equipment_not_a_cached_one(): void
     {
         $clientId = $this->aClientId();
         $equipmentId = $this->anEquipmentId($clientId, 'Bisturi');
         $newModelId = $this->anEquipmentModelId('Monitor Multiparâmetro', 'Marca Y', 'MY-1');
         $user = $this->authenticatedUser();
+
+        $this->actingAs($user, 'sanctum')->getJson("/api/v1/equipments/{$equipmentId}")
+            ->assertJsonPath('data.name', 'Bisturi');
 
         $this->actingAs($user, 'sanctum')->putJson("/api/v1/clients/{$clientId}/equipments/{$equipmentId}", [
             'equipment_model_id' => $newModelId,

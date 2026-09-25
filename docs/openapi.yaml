@@ -1295,14 +1295,21 @@ components:
         que desde o api#112 exige `equipment_model_id`/`no_accessories`/acessórios estruturados —
         um payload que `POST /orders` nunca aceitou. O contrato tinha ficado pra trás depois dessa
         mudança no catálogo.
+      # Achado do code review de 25/09/2026: sem os `not`, um payload com equipment_id E name ao
+      # mesmo tempo batia nos dois ramos (nenhum dos dois usa additionalProperties:false, então a
+      # chave do OUTRO ramo é só "propriedade extra permitida") — um validador de contrato
+      # estrito rejeitava algo que a API aceita de verdade (prioriza equipment_id, ignora o
+      # resto). O `not` força só um ramo bater por vez.
       oneOf:
         - type: object
           required: [equipment_id]
+          not: { required: [name] }
           properties:
             equipment_id: { type: string, format: uuid }
             accessories: { type: ["string", "null"], maxLength: 255 }
         - type: object
           required: [name]
+          not: { required: [equipment_id] }
           properties:
             name: { type: string, maxLength: 255 }
             brand: { type: ["string", "null"], maxLength: 255 }

@@ -8,6 +8,7 @@ use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
 use Modules\Orders\Domain\Events\OrderItemAdded;
 use Modules\Orders\Domain\Events\OrderItemsCleared;
 use Modules\Orders\Domain\Events\OrderOpened;
+use Modules\Orders\Domain\Events\OrderPdfGenerated;
 use Modules\Orders\Domain\Events\OrderStatusChanged;
 use Modules\Orders\Domain\Events\OrderUpdated;
 use Modules\Orders\Domain\Exceptions\InvalidOrderStatusTransition;
@@ -118,6 +119,13 @@ class OrderAggregate extends AggregateRoot
         return $this;
     }
 
+    public function recordPdfGenerated(string $path, string $generatedAt): self
+    {
+        $this->recordThat(new OrderPdfGenerated($path, $generatedAt));
+
+        return $this;
+    }
+
     /**
      * @throws InvalidOrderStatusTransition quando a transição não está na tabela de
      *                                      api-conventions.md § Status da OS (ex.: completed → in_analysis).
@@ -147,6 +155,8 @@ class OrderAggregate extends AggregateRoot
     protected function applyOrderEquipmentsCleared(OrderEquipmentsCleared $event): void {}
 
     protected function applyOrderItemsCleared(OrderItemsCleared $event): void {}
+
+    protected function applyOrderPdfGenerated(OrderPdfGenerated $event): void {}
 
     protected function applyOrderStatusChanged(OrderStatusChanged $event): void
     {

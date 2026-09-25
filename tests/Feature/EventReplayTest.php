@@ -10,6 +10,7 @@ use Illuminate\Support\Str;
 use Modules\Accessories\Domain\AccessoryAggregate;
 use Modules\Clients\Domain\ClientAggregate;
 use Modules\Clients\Domain\Enums\PersonType;
+use Modules\Clients\Infrastructure\Projectors\ClientProjector;
 use Modules\EquipmentModels\Domain\EquipmentModelAggregate;
 use Modules\Equipments\Application\AddEquipmentPhoto;
 use Modules\Equipments\Domain\EquipmentAggregate;
@@ -74,6 +75,46 @@ class EventReplayTest extends TestCase
     }
 
     /**
+     * `--aggregate-uuid=X` (replay de um agregado só) chama `resetState($aggregateUuid)` com o
+     * uuid preenchido — o spatie faz isso incondicionalmente (ver Projectionist::replay), então um
+     * `resetState()` que ignorasse o parâmetro e sempre apagasse a tabela inteira transformaria
+     * este comando pontual num apagão de todo mundo antes de reconstruir só um cliente.
+     */
+    public function test_replaying_a_single_aggregate_does_not_wipe_other_aggregates(): void
+    {
+        $survivorId = $this->aClientId('31233218000110');
+        $targetId = $this->aClientId('11222333000181');
+
+        Projectionist::replay(collect([app(ClientProjector::class)]), 0, null, $targetId);
+
+        $this->assertDatabaseHas('clients', ['id' => $survivorId]);
+        $this->assertDatabaseHas('clients', ['id' => $targetId]);
+        $this->assertSame(2, DB::table('clients')->count());
+    }
+
+    /**
+     * Mesma garantia que o teste acima, só que num projector com tabelas filhas por FK
+     * (equipment_photos/equipment_accessories) em vez de `whereKey` direto.
+     */
+    public function test_replaying_a_single_equipment_does_not_wipe_another_equipments_photos(): void
+    {
+        $clientId = $this->aClientId();
+        $survivorId = $this->anEquipmentId($clientId);
+        $targetId = $this->anEquipmentId($clientId);
+
+        Storage::fake(config('filesystems.default'));
+        $survivorPhotoPath = "equipments/{$survivorId}/foto.jpg";
+        Storage::disk(config('filesystems.default'))->put($survivorPhotoPath, 'conteúdo-fake');
+        app(AddEquipmentPhoto::class)($survivorId, $survivorPhotoPath, 'foto.jpg', 'image/jpeg', 13);
+
+        Projectionist::replay(collect([app(EquipmentProjector::class)]), 0, null, $targetId);
+
+        $this->assertDatabaseHas('equipments', ['id' => $survivorId]);
+        $this->assertDatabaseHas('equipments', ['id' => $targetId]);
+        $this->assertDatabaseHas('equipment_photos', ['equipment_id' => $survivorId]);
+    }
+
+    /**
      * @return array{0: EquipmentPhoto, 1: array<int, string>}
      */
     private function seedFullDataset(): array
@@ -123,14 +164,14 @@ class EventReplayTest extends TestCase
         return $uuid;
     }
 
-    private function aClientId(): string
+    private function aClientId(string $taxId = '31233218000110'): string
     {
         $uuid = (string) Str::uuid();
         ClientAggregate::retrieve($uuid)
             ->register(
                 personType: PersonType::Company,
                 name: 'Hospital São Lucas',
-                taxId: '31233218000110',
+                taxId: $taxId,
                 tradeName: null,
                 stateRegistration: null,
                 requester: 'Carlos',

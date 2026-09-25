@@ -80,10 +80,17 @@ class ClientProjector extends Projector
      * — sem isso, `onClientRegistered` estoura por `tax_id` duplicado. FKs desligadas: `equipments`
      * (cascadeOnDelete) e `orders` (restrictOnDelete) apontam pra `clients`, mas pertencem a outros
      * projectors — replayar só este não pode falhar nem apagar a tabela de outro módulo.
+     *
+     * $aggregateUuid vem preenchido com `--aggregate-uuid=X` (replay de um agregado só) — o
+     * spatie chama isto de qualquer forma (ver Projectionist::replay), então zerar a tabela
+     * inteira aqui apagaria todo mundo pra reconstruir só um cliente. Só o `where('id', ...)`
+     * some quando o replay é de verdade completo (`$aggregateUuid === null`).
      */
     public function resetState(?string $aggregateUuid = null): void
     {
-        Schema::withoutForeignKeyConstraints(fn () => Client::query()->delete());
+        Schema::withoutForeignKeyConstraints(function () use ($aggregateUuid) {
+            Client::when($aggregateUuid !== null, fn ($query) => $query->whereKey($aggregateUuid))->delete();
+        });
 
         $this->forgetCache();
     }

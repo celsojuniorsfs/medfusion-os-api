@@ -201,13 +201,19 @@ class EquipmentProjector extends Projector
      * desligadas: `order_equipments.equipment_id` (nullOnDelete) pertence a Orders, e replayar só
      * este projector não pode falhar por causa de outro módulo nem apagar a tabela dele —
      * `OrderProjector::resetState()` cuida da própria tabela quando o replay inclui os dois.
+     *
+     * $aggregateUuid vem preenchido com `--aggregate-uuid=X` (replay de um agregado só) — o
+     * spatie chama isto de qualquer forma (ver Projectionist::replay), então zerar as tabelas
+     * inteiras aqui apagaria todo mundo pra reconstruir só um equipamento. Os filtros por
+     * `equipment_id`/`whereKey` somem quando o replay é de verdade completo
+     * (`$aggregateUuid === null`).
      */
     public function resetState(?string $aggregateUuid = null): void
     {
-        Schema::withoutForeignKeyConstraints(function () {
-            EquipmentPhoto::query()->delete();
-            EquipmentAccessory::query()->delete();
-            Equipment::query()->delete();
+        Schema::withoutForeignKeyConstraints(function () use ($aggregateUuid) {
+            EquipmentPhoto::when($aggregateUuid !== null, fn ($query) => $query->where('equipment_id', $aggregateUuid))->delete();
+            EquipmentAccessory::when($aggregateUuid !== null, fn ($query) => $query->where('equipment_id', $aggregateUuid))->delete();
+            Equipment::when($aggregateUuid !== null, fn ($query) => $query->whereKey($aggregateUuid))->delete();
         });
 
         $this->forgetCache();

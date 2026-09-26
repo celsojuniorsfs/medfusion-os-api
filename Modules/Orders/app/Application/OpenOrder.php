@@ -11,6 +11,16 @@ use Modules\Orders\Infrastructure\ReadModels\Order;
 
 class OpenOrder
 {
+    /**
+     * >1 pra aproveitar o retry embutido de DB::transaction() em cima de
+     * ConcurrencyErrorDetector — reconhece tanto "Lock wait timeout" (MySQL) quanto "database is
+     * locked" (SQLite) como contenção transitória, não erro definitivo. Sem isso, duas requisições
+     * disputando o mesmo número podiam terminar numa delas travando no lock e vazando um 500 cru
+     * em vez do 409 esperado (achado escrevendo o teste de corrida de verdade, api#52 — o
+     * pre-check sozinho nunca fecha essa janela, só a tentativa de insert sob contenção real).
+     */
+    private const int TRANSACTION_ATTEMPTS = 3;
+
     public function __construct(private readonly OrderService $orderService) {}
 
     /**
@@ -60,7 +70,7 @@ class OpenOrder
                         $paymentMethod, $warrantyPeriod, $proposalValidity, $laborCost,
                     )
                     ->persist();
-            });
+            }, self::TRANSACTION_ATTEMPTS);
         } catch (UniqueConstraintViolationException) {
             throw new DuplicateOrderNumberException;
         }

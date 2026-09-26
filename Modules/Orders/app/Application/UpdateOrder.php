@@ -10,6 +10,9 @@ use Modules\Orders\Infrastructure\ReadModels\Order;
 
 class UpdateOrder
 {
+    /** Ver o mesmo comentário em OpenOrder::TRANSACTION_ATTEMPTS. */
+    private const int TRANSACTION_ATTEMPTS = 3;
+
     public function __construct(private readonly OrderService $orderService) {}
 
     /**
@@ -60,7 +63,7 @@ class UpdateOrder
                     ->clearEquipments()
                     ->clearItems()
                     ->persist();
-            });
+            }, self::TRANSACTION_ATTEMPTS);
         } catch (UniqueConstraintViolationException) {
             throw new DuplicateOrderNumberException;
         }

@@ -82,9 +82,13 @@ issue api #23, F2):
 
 1. Constraint `unique` em `orders.number` no banco — a garantia real está aqui, não na aplicação.
 2. `GET /orders/next-number` é apenas uma **sugestão de UI**; o valor não é reservado.
-3. Ao salvar, a criação roda dentro de uma transação; se a constraint `unique` disparar, a
-   aplicação captura a exceção de integridade e responde `409` (ver acima) em vez de vazar um erro
-   500 de SQL.
+3. Ao salvar (criação ou edição), a transação roda com retry (`DB::transaction($callback,
+   attempts: 3)`) — se a segunda requisição esbarra num lock ainda aberto pela primeira em vez de
+   já achar a constraint violada, o retry embutido do Laravel (via
+   `Illuminate\Database\ConcurrencyErrorDetector`) tenta de novo em vez de vazar essa contenção
+   transitória como erro. Na nova tentativa, ou o número já está livre (a outra transação
+   desistiu) ou a constraint `unique` dispara de verdade — a aplicação captura essa exceção de
+   integridade e responde `409` em vez de vazar um erro 500 de SQL.
 
 ## Status da OS — transições
 

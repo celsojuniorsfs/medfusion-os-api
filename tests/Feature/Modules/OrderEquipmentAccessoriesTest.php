@@ -41,4 +41,22 @@ class OrderEquipmentAccessoriesTest extends TestCase
     {
         $this->assertSame([], OrderEquipmentAccessories::normalize(null));
     }
+
+    /**
+     * Achado em code review: um item malformado não pode estourar TypeError — isso roda dentro de
+     * event-sourcing:replay, que processa todos os agregados numa passada só, e um único evento
+     * com payload ruim não pode abortar o replay inteiro.
+     */
+    public function test_normalize_skips_malformed_items_instead_of_throwing(): void
+    {
+        $this->assertSame(
+            [['name' => 'Pedal', 'quantity' => 1]],
+            OrderEquipmentAccessories::normalize([
+                'não é um array',
+                ['quantity' => 1],
+                ['name' => '  ', 'quantity' => 1],
+                ['name' => 'Pedal', 'quantity' => 1],
+            ]),
+        );
+    }
 }

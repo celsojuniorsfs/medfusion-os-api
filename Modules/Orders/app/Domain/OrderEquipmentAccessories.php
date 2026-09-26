@@ -26,13 +26,26 @@ final class OrderEquipmentAccessories
             return self::fromLegacyText($accessories);
         }
 
-        return array_values(array_map(
-            fn (array $accessory) => [
-                'name' => trim((string) $accessory['name']),
-                'quantity' => (int) $accessory['quantity'],
-            ],
-            $accessories,
-        ));
+        // Ignora silenciosamente um item malformado (não-array, ou sem name/quantity) em vez de
+        // estourar TypeError — isso roda dentro de event-sourcing:replay, que processa TODOS os
+        // agregados numa passada só; deixar um item ruim de UM evento abortar o replay inteiro é
+        // pior do que só pular aquele item (mesma classe de problema documentada em CLAUDE.md pros
+        // api#101/api#108 — o sintoma só aparece no replay, não na leitura normal).
+        $normalized = [];
+        foreach ($accessories as $accessory) {
+            if (! is_array($accessory) || ! isset($accessory['name'], $accessory['quantity'])) {
+                continue;
+            }
+
+            $name = trim((string) $accessory['name']);
+            if ($name === '') {
+                continue;
+            }
+
+            $normalized[] = ['name' => $name, 'quantity' => (int) $accessory['quantity']];
+        }
+
+        return $normalized;
     }
 
     /**

@@ -20,6 +20,7 @@ use Modules\Identity\Domain\UserAggregate;
 use Modules\Orders\Application\AddOrderItem;
 use Modules\Orders\Application\AttachEquipmentToOrder;
 use Modules\Orders\Application\OpenOrder;
+use Modules\Orders\Infrastructure\Projectors\OrderProjector;
 use Modules\Orders\Infrastructure\ReadModels\Order;
 use Spatie\EventSourcing\Facades\Projectionist;
 use Tests\TestCase;
@@ -118,6 +119,39 @@ class EventReplayTest extends TestCase
         $this->assertDatabaseHas('equipments', ['id' => $survivorId]);
         $this->assertDatabaseHas('equipments', ['id' => $targetId]);
         $this->assertDatabaseHas('equipment_photos', ['equipment_id' => $survivorId]);
+    }
+
+    /**
+     * Achado em code review: o ramo aginda-escopado de `OrderProjector::resetState()` (o `whereIn`
+     * que apaga só os acessórios das ordens do agregado sendo relido) nunca era exercitado por
+     * nenhum teste — todo replay de OrderProjector nos outros testes é completo
+     * ($aggregateUuid === null), que só passa pelo `delete()` sem filtro. Mesma garantia dos
+     * testes acima (photos/clients), agora pro filho novo order_equipment_accessories.
+     */
+    public function test_replaying_a_single_order_does_not_wipe_another_orders_accessories(): void
+    {
+        $clientId = $this->aClientId();
+        $userId = $this->aUserId();
+        $survivorEquipmentId = $this->anEquipmentId($clientId);
+        $targetEquipmentId = $this->anEquipmentId($clientId);
+
+        $survivorOrder = $this->anOrderWithEquipment($clientId, $userId, $survivorEquipmentId);
+        $targetOrder = $this->anOrderWithEquipment($clientId, $userId, $targetEquipmentId);
+
+        Projectionist::replay(collect([app(OrderProjector::class)]), 0, null, $targetOrder->id);
+
+        $this->assertDatabaseHas('orders', ['id' => $survivorOrder->id]);
+        $this->assertDatabaseHas('orders', ['id' => $targetOrder->id]);
+        $this->assertDatabaseHas('order_equipment_accessories', [
+            'order_equipment_id' => DB::table('order_equipments')->where('order_id', $survivorOrder->id)->value('id'),
+            'name' => 'Cabo de força',
+        ]);
+        $this->assertDatabaseHas('order_equipment_accessories', [
+            'order_equipment_id' => DB::table('order_equipments')->where('order_id', $targetOrder->id)->value('id'),
+            'name' => 'Cabo de força',
+        ]);
+        // 2 acessórios por OS (ver anOrderWithEquipment) x 2 OS's — nada duplicado, nada órfão.
+        $this->assertSame(4, DB::table('order_equipment_accessories')->count());
     }
 
     /**

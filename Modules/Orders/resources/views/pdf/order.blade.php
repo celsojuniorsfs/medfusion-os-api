@@ -98,6 +98,14 @@
 
 <div class="section-title">EQUIPAMENTOS</div>
 <table class="bordered equipment-table">
+    <colgroup>
+        <col style="width: 20%;">
+        <col style="width: 14%;">
+        <col style="width: 13%;">
+        <col style="width: 13%;">
+        <col style="width: 10%;">
+        <col style="width: 30%;">
+    </colgroup>
     <thead>
         <tr>
             <th>Equipamento</th>
@@ -157,22 +165,34 @@
     </tbody>
 </table>
 
-<table class="footer-table" style="margin-top: 8px;">
+<!--
+    Duas mini-tabelas lado a lado, cada uma com sua própria altura de linha — não uma tabela só
+    de 4 colunas. Forma pagamento/Garantia (e Validade proposta/Mão de obra) são campos de texto
+    livre sem relação de tamanho um com o outro; numa tabela só, um valor longo de um lado (ex.:
+    "Garantia de 90 dias para peças e 180 dias para serviço...") estica a LINHA inteira e deixa o
+    lado curto (ex.: "Boleto bancário") com um vão vazio enorme embaixo — achado renderizando um
+    PDF de verdade com esses dois campos de tamanhos bem diferentes.
+-->
+<table style="margin-top: 8px;">
     <tr>
-        <td style="width: 25%;">Forma pagamento</td>
-        <td class="value" style="width: 25%;">{{ $order->payment_method }}</td>
-        <td style="width: 25%;">Garantia</td>
-        <td class="value" style="width: 25%;">{{ $order->warranty_period }}</td>
+        <td style="width: 50%; padding: 0 4px 0 0;">
+            <table class="footer-table">
+                <tr><td style="width: 45%;">Forma pagamento</td><td class="value">{{ $order->payment_method }}</td></tr>
+                <tr><td>Validade proposta</td><td class="value">{{ $order->proposal_validity }}</td></tr>
+            </table>
+        </td>
+        <td style="width: 50%; padding: 0 0 0 4px;">
+            <table class="footer-table">
+                <tr><td style="width: 45%;">Garantia</td><td class="value">{{ $order->warranty_period }}</td></tr>
+                <tr><td>Mão de obra</td><td class="value">{{ Fmt::currency($order->labor_cost) }}</td></tr>
+            </table>
+        </td>
     </tr>
+</table>
+<table class="footer-table" style="margin-top: 4px;">
     <tr>
-        <td>Validade proposta</td>
-        <td class="value">{{ $order->proposal_validity }}</td>
-        <td>Mão de obra</td>
-        <td class="value">{{ Fmt::currency($order->labor_cost) }}</td>
-    </tr>
-    <tr>
-        <td colspan="3" style="text-align: right;">Total</td>
-        <td class="value">{{ Fmt::currency($order->total) }}</td>
+        <td style="width: 85%; text-align: right;">Total</td>
+        <td class="value" style="width: 15%;">{{ Fmt::currency($order->total) }}</td>
     </tr>
 </table>
 

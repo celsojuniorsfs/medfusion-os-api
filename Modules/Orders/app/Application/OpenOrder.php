@@ -17,7 +17,15 @@ class OpenOrder
      * @throws DuplicateOrderNumberException quando o número já está em uso — pelo pré-check
      *                                       (caso comum) ou pela constraint `unique` do banco,
      *                                       capturada dentro da transação (corrida de verdade
-     *                                       entre duas requisições simultâneas).
+     *                                       entre duas requisições simultâneas). O retry de
+     *                                       contenção transitória mora no `DB::transaction()` MAIS
+     *                                       EXTERNO de quem chama esta Action (ver
+     *                                       `OrderController::TRANSACTION_ATTEMPTS`) — passar
+     *                                       `attempts` aqui não teria efeito, porque a transação
+     *                                       desta Action roda como SAVEPOINT aninhado dentro
+     *                                       daquela, e o Laravel trata contenção detectada num
+     *                                       nível aninhado como fatal de propósito, não como algo
+     *                                       pra tentar de novo isoladamente.
      */
     public function __invoke(
         int $number,

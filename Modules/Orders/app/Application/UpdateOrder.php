@@ -21,7 +21,9 @@ class UpdateOrder
      *
      * @throws DuplicateOrderNumberException quando o número já está em uso por OUTRA OS —
      *                                       $ignoreOrderId evita falso-positivo quando a OS
-     *                                       mantém o próprio número.
+     *                                       mantém o próprio número. Ver o comentário em
+     *                                       OpenOrder sobre onde mora o retry de contenção
+     *                                       transitória (não é aqui).
      */
     public function __invoke(
         string $orderId,

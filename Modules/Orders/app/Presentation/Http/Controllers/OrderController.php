@@ -25,6 +25,21 @@ class OrderController
     private const array WITH = ['client', 'user', 'equipments', 'items'];
 
     /**
+     * O retry de contenção transitória (`ConcurrencyErrorDetector` — "Lock wait timeout"/"database
+     * is locked") só funciona no nível de transação MAIS EXTERNO. `OpenOrder`/`UpdateOrder` abrem a
+     * própria `DB::transaction()` por dentro desta aqui (SAVEPOINT, não uma transação nova) — e
+     * `Illuminate\Database\Concerns\ManagesTransactions::handleTransactionException()` trata
+     * contenção detectada num nível aninhado (`$this->transactions > 1`) como fatal de propósito
+     * (deadlock do MySQL desfaz a transação inteira, não só o savepoint): decrementa o contador e
+     * relança na hora como `DeadlockException`, ignorando `attempts` do `DB::transaction()` interno.
+     * Só o `catch` do `DB::transaction()` MAIS EXTERNO (aqui) roda com `$this->transactions === 1`
+     * de novo depois desse desfazimento, e é aí que `attempts` de fato entra em ação — passar
+     * `attempts` só pro `DB::transaction()` interno de `OpenOrder`/`UpdateOrder` é o mesmo que não
+     * ter retry nenhum, porque na prática (via HTTP) ele nunca roda desaninhado.
+     */
+    private const int TRANSACTION_ATTEMPTS = 3;
+
+    /**
      * GET /orders — filtros por client_id, equipment_id (usado pela tela de histórico do
      * equipamento, ver escopo-v1.md), status e intervalo de data; ordenada por data decrescente
      * (sem parâmetro de sort — mesma convenção já usada em GET /clients).
@@ -96,7 +111,7 @@ class OrderController
             $this->attachEquipmentsAndItems($order->id, $equipments, $data['items'] ?? []);
 
             return $order;
-        });
+        }, self::TRANSACTION_ATTEMPTS);
 
         // fresh(), não load(): load() só recarrega relações, e o total já mudou via
         // OrderProjector::onOrderItemAdded() desde que $order foi carregado.
@@ -144,7 +159,7 @@ class OrderController
             $this->attachEquipmentsAndItems($id, $equipments, $data['items'] ?? []);
 
             return Order::findOrFail($id);
-        });
+        }, self::TRANSACTION_ATTEMPTS);
 
         return response()->json(['data' => new OrderResource($order->fresh(self::WITH))]);
     }

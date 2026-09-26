@@ -136,7 +136,7 @@ class OrdersPdfHttpTest extends TestCase
         $response->assertJsonStructure(['url', 'generated_at', 'expires_at']);
     }
 
-    public function test_generating_twice_keeps_both_files_and_get_points_to_the_newest(): void
+    public function test_generating_again_deletes_the_previous_file_and_get_points_to_the_newest(): void
     {
         $user = $this->authenticatedUser();
         $clientId = $this->aClientId();
@@ -154,7 +154,7 @@ class OrdersPdfHttpTest extends TestCase
 
         $this->assertNotSame($firstPath, $secondPath);
         $disk = Storage::disk(config('filesystems.default'));
-        $disk->assertExists($firstPath);
+        $disk->assertMissing($firstPath);
         $disk->assertExists($secondPath);
 
         $get = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders/{$order->id}/pdf")->assertOk()->json();

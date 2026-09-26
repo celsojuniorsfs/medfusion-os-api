@@ -29,11 +29,20 @@ class OrderPdfController
         $dompdf->setPaper('a4', 'portrait');
         $dompdf->render();
 
+        $previousPath = $order->pdf_path;
+        $disk = Storage::disk(config('filesystems.default'));
+
         $path = "orders/{$id}/os-{$order->number}-".now()->format('YmdHis').'.pdf';
-        Storage::disk(config('filesystems.default'))->put($path, $dompdf->output());
+        $disk->put($path, $dompdf->output());
 
         $generatedAt = now()->toIso8601String();
         $recordOrderPdf($id, $path, $generatedAt);
+
+        // Só depois do novo estar gravado e registrado — se algo acima falhar, o anterior continua
+        // sendo o PDF válido da OS.
+        if ($previousPath && $previousPath !== $path) {
+            $disk->delete($previousPath);
+        }
 
         return response()->json($this->payload($id, $path, $generatedAt));
     }

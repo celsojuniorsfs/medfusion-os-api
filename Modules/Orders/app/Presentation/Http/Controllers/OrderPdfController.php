@@ -5,6 +5,7 @@ namespace Modules\Orders\Presentation\Http\Controllers;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Modules\Orders\Application\RecordOrderPdf;
@@ -15,36 +16,46 @@ class OrderPdfController
 {
     private const array WITH = ['client', 'equipments.accessories', 'items'];
 
+    // Render do dompdf leva poucos segundos; 30s cobre com folga sem travar a OS se o processo morrer.
+    private const int LOCK_SECONDS = 30;
+
     public function store(string $id, RecordOrderPdf $recordOrderPdf): JsonResponse
     {
-        $order = Order::with(self::WITH)->findOrFail($id);
+        Order::findOrFail($id);
 
-        $html = view('orders::pdf.order', [
-            'order' => $order,
-            'logoBase64' => $this->logoBase64(),
-        ])->render();
+        // Uma geração por OS de cada vez: sem o lock, dois cliques simultâneos leem o mesmo
+        // `pdf_path` anterior, os dois apagam só ele, e o PDF do primeiro a terminar fica órfão no
+        // storage pra sempre. `$order` é lido DENTRO do lock pra ver o path gravado pelo anterior.
+        return Cache::lock("orders:{$id}:pdf", self::LOCK_SECONDS)->block(self::LOCK_SECONDS, function () use ($id, $recordOrderPdf) {
+            $order = Order::with(self::WITH)->findOrFail($id);
 
-        $dompdf = new Dompdf((new Options)->set('isRemoteEnabled', false));
-        $dompdf->loadHtml($html);
-        $dompdf->setPaper('a4', 'portrait');
-        $dompdf->render();
+            $html = view('orders::pdf.order', [
+                'order' => $order,
+                'logoBase64' => $this->logoBase64(),
+            ])->render();
 
-        $previousPath = $order->pdf_path;
-        $disk = Storage::disk(config('filesystems.default'));
+            $dompdf = new Dompdf((new Options)->set('isRemoteEnabled', false));
+            $dompdf->loadHtml($html);
+            $dompdf->setPaper('a4', 'portrait');
+            $dompdf->render();
 
-        $path = "orders/{$id}/os-{$order->number}-".now()->format('YmdHis').'.pdf';
-        $disk->put($path, $dompdf->output());
+            $previousPath = $order->pdf_path;
+            $disk = Storage::disk(config('filesystems.default'));
 
-        $generatedAt = now()->toIso8601String();
-        $recordOrderPdf($id, $path, $generatedAt);
+            $path = "orders/{$id}/os-{$order->number}-".now()->format('YmdHis').'.pdf';
+            $disk->put($path, $dompdf->output());
 
-        // Só depois do novo estar gravado e registrado — se algo acima falhar, o anterior continua
-        // sendo o PDF válido da OS.
-        if ($previousPath && $previousPath !== $path) {
-            $disk->delete($previousPath);
-        }
+            $generatedAt = now()->toIso8601String();
+            $recordOrderPdf($id, $path, $generatedAt);
 
-        return response()->json($this->payload($id, $path, $generatedAt));
+            // Só depois do novo estar gravado e registrado — se algo acima falhar, o anterior
+            // continua sendo o PDF válido da OS.
+            if ($previousPath && $previousPath !== $path) {
+                $disk->delete($previousPath);
+            }
+
+            return response()->json($this->payload($id, $path, $generatedAt));
+        });
     }
 
     public function show(string $id): JsonResponse

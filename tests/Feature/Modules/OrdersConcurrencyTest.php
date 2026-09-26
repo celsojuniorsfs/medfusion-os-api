@@ -11,14 +11,25 @@ use Illuminate\Support\Str;
 use Modules\Clients\Domain\ClientAggregate;
 use Modules\Clients\Domain\Enums\PersonType;
 use Modules\Identity\Domain\UserAggregate;
-use Modules\Orders\Application\OpenOrder;
-use Modules\Orders\Domain\Exceptions\DuplicateOrderNumberException;
+use Modules\Identity\Infrastructure\ReadModels\User;
 use Modules\Orders\Infrastructure\ReadModels\Order;
 use Tests\TestCase;
 
 /**
  * api#52: prova a corrida de verdade, não só o pre-check sequencial que
  * OrdersNumberingTest::test_rejects_opening_a_second_order_with_the_same_number já cobre.
+ *
+ * Passa pelo endpoint HTTP de verdade (`POST /orders`), não chama `OpenOrder` direto — isso
+ * importa porque `OpenOrder` roda a própria `DB::transaction()` ANINHADA dentro da transação de
+ * `OrderController::store()` (SAVEPOINT, não uma transação nova), e
+ * `Illuminate\Database\Concerns\ManagesTransactions::handleTransactionException()` trata
+ * contenção detectada num nível aninhado como fatal de propósito — relança na hora como
+ * `DeadlockException`, ignorando qualquer `attempts` passado pro `DB::transaction()` daquele
+ * nível. O retry de verdade só roda no `catch` do `DB::transaction()` MAIS EXTERNO
+ * (`OrderController::TRANSACTION_ATTEMPTS`, ver o comentário lá). Um teste que chamasse
+ * `app(OpenOrder::class)(...)` direto, sem nenhuma transação em volta, exercitaria só o caso
+ * NÃO aninhado — passaria mesmo se o retry no controller quebrasse, dando falsa confiança (foi
+ * exatamente o que aconteceu na primeira versão deste teste, pego em code review).
  *
  * `:memory:` (o padrão de `phpunit.xml`) não serve aqui: cada conexão a um banco `:memory:` é um
  * banco isolado — não existe lock nenhum pra disputar entre duas conexões. `setUp()` troca a
@@ -32,15 +43,17 @@ use Tests\TestCase;
  * então concorrem pelo lock de escrita de verdade.
  *
  * PHP é single-threaded — não dá pra rodar as duas "requisições" ao mesmo tempo de fato. Em vez
- * disso, a conexão "race" segura uma transação aberta (sem commit) enquanto chama-se `OpenOrder`;
- * o INSERT dele esbarra no lock e falha com "database is locked" (SQLite) — a mesma classe de
- * erro que o "Lock wait timeout" do MySQL sob a mesma contenção (as duas são reconhecidas por
- * `Illuminate\Database\ConcurrencyErrorDetector`, o detector que o retry embutido de
- * `DB::transaction($callback, $attempts)` já usa). Um listener no evento `TransactionRolledBack`
- * comita a conexão "race" assim que a tentativa de `OpenOrder` desiste da primeira rodada,
- * simulando "a outra requisição terminou primeiro" no exato momento em que o retry entra em ação
- * — a segunda tentativa então esbarra no registro de verdade já commitado, e cai no caminho normal
- * de "número duplicado".
+ * disso, a conexão "race" segura uma transação aberta (sem commit) enquanto chama-se
+ * `POST /orders`; o INSERT dele esbarra no lock e falha com "database is locked" (SQLite) — a
+ * mesma classe de erro que o "Lock wait timeout" do MySQL sob a mesma contenção (as duas são
+ * reconhecidas por `Illuminate\Database\ConcurrencyErrorDetector`, o detector que o retry embutido
+ * de `DB::transaction($callback, $attempts)` já usa). Um listener no evento `TransactionRolledBack`
+ * comita a conexão "race" assim que a tentativa perdedora desiste da primeira rodada da transação
+ * MAIS EXTERNA (o `DeadlockException` do savepoint aninhado propaga até lá, dispara o rollback de
+ * verdade, e É NESSE PONTO que o evento dispara — mesmo aninhado, é a mesma conexão/objeto
+ * `Connection`), simulando "a outra requisição terminou primeiro" no exato momento em que o retry
+ * entra em ação — a segunda tentativa então esbarra no registro de verdade já commitado, e cai no
+ * caminho normal de "número duplicado" (409).
  */
 class OrdersConcurrencyTest extends TestCase
 {
@@ -68,6 +81,16 @@ class OrdersConcurrencyTest extends TestCase
         }
     }
 
+    private function authenticatedUser(): User
+    {
+        $uuid = (string) Str::uuid();
+        UserAggregate::retrieve($uuid)
+            ->register('Ana Técnica', 'ana@medfusion.example', Hash::make('segredo'))
+            ->persist();
+
+        return User::findOrFail($uuid);
+    }
+
     private function aClientId(): string
     {
         $uuid = (string) Str::uuid();
@@ -92,14 +115,21 @@ class OrdersConcurrencyTest extends TestCase
         return $uuid;
     }
 
-    private function aUserId(): string
+    /**
+     * @return array<string, mixed>
+     */
+    private function minimalOrderPayload(string $clientId, int $number): array
     {
-        $uuid = (string) Str::uuid();
-        UserAggregate::retrieve($uuid)
-            ->register('Ana Técnica', 'ana@medfusion.example', Hash::make('segredo'))
-            ->persist();
-
-        return $uuid;
+        return [
+            'number' => $number,
+            'date' => '2026-09-25',
+            'client_id' => $clientId,
+            'labor_cost' => 150.0,
+            'equipments' => [
+                ['name' => 'Bisturi Elétrico'],
+            ],
+            'items' => [],
+        ];
     }
 
     /**
@@ -132,14 +162,14 @@ class OrdersConcurrencyTest extends TestCase
         return $race;
     }
 
-    public function test_two_connections_racing_for_the_same_number_end_in_one_success_and_one_clean_conflict(): void
+    public function test_two_requests_racing_for_the_same_number_end_in_one_success_and_one_clean_conflict(): void
     {
+        $user = $this->authenticatedUser();
         $clientId = $this->aClientId();
-        $userId = $this->aUserId();
         $number = 424242;
         $winningId = (string) Str::uuid();
 
-        $race = $this->raceForNumber($number, $clientId, $userId, $winningId);
+        $race = $this->raceForNumber($number, $clientId, $user->id, $winningId);
 
         // A "outra requisição" (race) só comita quando a nossa desiste da primeira tentativa e dá
         // rollback — o mais perto que dá de simular "ela terminou primeiro" num processo só.
@@ -152,12 +182,10 @@ class OrdersConcurrencyTest extends TestCase
         });
 
         try {
-            $this->expectException(DuplicateOrderNumberException::class);
+            $response = $this->actingAs($user, 'sanctum')
+                ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId, $number));
 
-            app(OpenOrder::class)(
-                $number, '2026-09-25', $clientId, $userId,
-                false, false, false, false, false, null, null, null, null, null, null, null,
-            );
+            $response->assertStatus(409);
         } finally {
             if (! $raceCommitted) {
                 $race->rollBack();
@@ -165,14 +193,14 @@ class OrdersConcurrencyTest extends TestCase
         }
     }
 
-    public function test_the_order_from_the_connection_that_committed_first_is_the_one_that_survives(): void
+    public function test_the_order_from_the_request_that_committed_first_is_the_one_that_survives(): void
     {
+        $user = $this->authenticatedUser();
         $clientId = $this->aClientId();
-        $userId = $this->aUserId();
         $number = 424243;
         $winningId = (string) Str::uuid();
 
-        $race = $this->raceForNumber($number, $clientId, $userId, $winningId);
+        $race = $this->raceForNumber($number, $clientId, $user->id, $winningId);
 
         $raceCommitted = false;
         Event::listen(TransactionRolledBack::class, function () use ($race, &$raceCommitted) {
@@ -183,14 +211,10 @@ class OrdersConcurrencyTest extends TestCase
         });
 
         try {
-            app(OpenOrder::class)(
-                $number, '2026-09-25', $clientId, $userId,
-                false, false, false, false, false, null, null, null, null, null, null, null,
-            );
+            $response = $this->actingAs($user, 'sanctum')
+                ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId, $number));
 
-            $this->fail('Esperava DuplicateOrderNumberException.');
-        } catch (DuplicateOrderNumberException) {
-            // esperado
+            $response->assertStatus(409);
         } finally {
             if (! $raceCommitted) {
                 $race->rollBack();
@@ -198,7 +222,8 @@ class OrdersConcurrencyTest extends TestCase
         }
 
         // A que "chegou primeiro" (a da transação que já estava aberta) é a que sobrevive — nada
-        // da tentativa perdedora vaza pro banco.
+        // da tentativa perdedora (nem o equipamento que ela chegou a registrar antes do conflito)
+        // vaza pro banco, porque o retry reroda a transação do controller inteira, não só o INSERT.
         $this->assertSame(1, Order::where('number', $number)->count());
         $this->assertDatabaseHas('orders', ['id' => $winningId, 'number' => $number]);
     }

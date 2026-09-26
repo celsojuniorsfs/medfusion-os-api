@@ -3,6 +3,7 @@
 namespace Modules\Orders\Infrastructure\Projectors;
 
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Modules\Orders\Domain\Events\OrderEquipmentAttached;
 use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
@@ -156,10 +157,18 @@ class OrderProjector extends Projector
      * conhecida de comportamento inconsistente em Redis/Valkey gerenciado com réplica/cluster).
      * O Projector já é o único lugar que escreve no read model, então vira também o único lugar
      * que invalida o cache dele.
+     *
+     * `DB::afterCommit()`, não incremento direto: desde que `OrderController` passou a rodar com
+     * retry (`TRANSACTION_ATTEMPTS`, api#52), uma tentativa que esbarra em contenção e é
+     * descartada por rollback já pode ter chamado este método antes de falhar — um incremento
+     * direto aqui sobreviveria ao rollback (Cache/Valkey não é desfeito por ROLLBACK do SQL) e
+     * invalidaria o cache uma vez a mais do que o necessário por tentativa perdida.
+     * `afterCommit()` adia pro commit de verdade da transação mais externa (e roda na hora se não
+     * houver transação nenhuma em aberto) — nunca dispara pra uma tentativa que não vingou.
      */
     private function forgetCache(): void
     {
-        Cache::increment('orders:cache-version');
+        DB::afterCommit(fn () => Cache::increment('orders:cache-version'));
     }
 
     /**

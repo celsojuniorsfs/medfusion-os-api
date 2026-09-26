@@ -11,23 +11,21 @@ use Modules\Orders\Infrastructure\ReadModels\Order;
 
 class OpenOrder
 {
-    /**
-     * >1 pra aproveitar o retry embutido de DB::transaction() em cima de
-     * ConcurrencyErrorDetector — reconhece tanto "Lock wait timeout" (MySQL) quanto "database is
-     * locked" (SQLite) como contenção transitória, não erro definitivo. Sem isso, duas requisições
-     * disputando o mesmo número podiam terminar numa delas travando no lock e vazando um 500 cru
-     * em vez do 409 esperado (achado escrevendo o teste de corrida de verdade, api#52 — o
-     * pre-check sozinho nunca fecha essa janela, só a tentativa de insert sob contenção real).
-     */
-    private const int TRANSACTION_ATTEMPTS = 3;
-
     public function __construct(private readonly OrderService $orderService) {}
 
     /**
      * @throws DuplicateOrderNumberException quando o número já está em uso — pelo pré-check
      *                                       (caso comum) ou pela constraint `unique` do banco,
      *                                       capturada dentro da transação (corrida de verdade
-     *                                       entre duas requisições simultâneas).
+     *                                       entre duas requisições simultâneas). O retry de
+     *                                       contenção transitória mora no `DB::transaction()` MAIS
+     *                                       EXTERNO de quem chama esta Action (ver
+     *                                       `OrderController::TRANSACTION_ATTEMPTS`) — passar
+     *                                       `attempts` aqui não teria efeito, porque a transação
+     *                                       desta Action roda como SAVEPOINT aninhado dentro
+     *                                       daquela, e o Laravel trata contenção detectada num
+     *                                       nível aninhado como fatal de propósito, não como algo
+     *                                       pra tentar de novo isoladamente.
      */
     public function __invoke(
         int $number,
@@ -70,7 +68,7 @@ class OpenOrder
                         $paymentMethod, $warrantyPeriod, $proposalValidity, $laborCost,
                     )
                     ->persist();
-            }, self::TRANSACTION_ATTEMPTS);
+            });
         } catch (UniqueConstraintViolationException) {
             throw new DuplicateOrderNumberException;
         }

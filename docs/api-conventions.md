@@ -82,13 +82,18 @@ issue api #23, F2):
 
 1. Constraint `unique` em `orders.number` no banco — a garantia real está aqui, não na aplicação.
 2. `GET /orders/next-number` é apenas uma **sugestão de UI**; o valor não é reservado.
-3. Ao salvar (criação ou edição), a transação roda com retry (`DB::transaction($callback,
-   attempts: 3)`) — se a segunda requisição esbarra num lock ainda aberto pela primeira em vez de
-   já achar a constraint violada, o retry embutido do Laravel (via
-   `Illuminate\Database\ConcurrencyErrorDetector`) tenta de novo em vez de vazar essa contenção
-   transitória como erro. Na nova tentativa, ou o número já está livre (a outra transação
-   desistiu) ou a constraint `unique` dispara de verdade — a aplicação captura essa exceção de
-   integridade e responde `409` em vez de vazar um erro 500 de SQL.
+3. Ao salvar (criação ou edição), a transação **do controller** (`OrderController::store()`/
+   `update()`) roda com retry (`DB::transaction($callback, attempts: 3)`) — se a segunda
+   requisição esbarra num lock ainda aberto pela primeira em vez de já achar a constraint
+   violada, o retry embutido do Laravel (via `Illuminate\Database\ConcurrencyErrorDetector`) tenta
+   de novo em vez de vazar essa contenção transitória como erro. Na nova tentativa, ou o número já
+   está livre (a outra transação desistiu) ou a constraint `unique` dispara de verdade — a
+   aplicação captura essa exceção de integridade e responde `409` em vez de vazar um erro 500 de
+   SQL. O `attempts` **precisa** estar na transação mais externa: `OpenOrder`/`UpdateOrder` abrem a
+   própria transação por dentro dessa, como SAVEPOINT aninhado, e o Laravel trata contenção
+   detectada num nível aninhado como fatal de propósito (relança na hora como `DeadlockException`,
+   ignorando `attempts` daquele nível) — só o `catch` do nível mais externo roda de novo com a
+   contagem de tentativas.
 
 ## Status da OS — transições
 

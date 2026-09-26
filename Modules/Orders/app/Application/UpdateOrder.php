@@ -10,9 +10,6 @@ use Modules\Orders\Infrastructure\ReadModels\Order;
 
 class UpdateOrder
 {
-    /** Ver o mesmo comentário em OpenOrder::TRANSACTION_ATTEMPTS. */
-    private const int TRANSACTION_ATTEMPTS = 3;
-
     public function __construct(private readonly OrderService $orderService) {}
 
     /**
@@ -24,7 +21,9 @@ class UpdateOrder
      *
      * @throws DuplicateOrderNumberException quando o número já está em uso por OUTRA OS —
      *                                       $ignoreOrderId evita falso-positivo quando a OS
-     *                                       mantém o próprio número.
+     *                                       mantém o próprio número. Ver o comentário em
+     *                                       OpenOrder sobre onde mora o retry de contenção
+     *                                       transitória (não é aqui).
      */
     public function __invoke(
         string $orderId,
@@ -63,7 +62,7 @@ class UpdateOrder
                     ->clearEquipments()
                     ->clearItems()
                     ->persist();
-            }, self::TRANSACTION_ATTEMPTS);
+            });
         } catch (UniqueConstraintViolationException) {
             throw new DuplicateOrderNumberException;
         }

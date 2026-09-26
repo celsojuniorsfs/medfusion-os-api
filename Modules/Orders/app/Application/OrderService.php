@@ -2,7 +2,9 @@
 
 namespace Modules\Orders\Application;
 
+use Modules\Orders\Domain\Enums\OrderStatus;
 use Modules\Orders\Domain\Exceptions\DuplicateOrderNumberException;
+use Modules\Orders\Domain\Exceptions\OrderNotEditableException;
 use Modules\Orders\Infrastructure\ReadModels\Order;
 
 /**
@@ -12,6 +14,14 @@ use Modules\Orders\Infrastructure\ReadModels\Order;
  */
 class OrderService
 {
+    /**
+     * `completed` não é tecnicamente terminal no grafo de transições (pode ir pra
+     * `warranty_repair` e voltar) — mas editar equipamentos/peças de uma OS já concluída não faz
+     * sentido operacional, então entra aqui mesmo assim. `canceled`/`not_approved` são terminais
+     * de verdade (`OrderStatus::allowedNextStatuses()` devolve `[]` pros dois).
+     */
+    private const array UNEDITABLE_STATUSES = [OrderStatus::Canceled, OrderStatus::Completed, OrderStatus::NotApproved];
+
     /**
      * Só uma sugestão de UI — nunca reserva o número (ver api-conventions.md § Concorrência na
      * numeração da OS). Reavaliada a cada chamada; se o técnico sobrescrever para um número bem
@@ -44,6 +54,22 @@ class OrderService
 
         if ($query->exists()) {
             throw new DuplicateOrderNumberException;
+        }
+    }
+
+    /**
+     * Checa ANTES de editar, nunca pelo erro do banco (mesmo princípio de
+     * assertNumberIsAvailable/CLAUDE.md § Recusar uma remoção) — PUT /orders/{id} não tinha
+     * nenhuma trava de status até este método existir.
+     *
+     * @throws OrderNotEditableException
+     */
+    public function assertIsEditable(Order $order): void
+    {
+        $status = OrderStatus::from($order->status);
+
+        if (in_array($status, self::UNEDITABLE_STATUSES, true)) {
+            throw new OrderNotEditableException($status);
         }
     }
 }

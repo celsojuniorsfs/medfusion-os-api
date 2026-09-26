@@ -127,10 +127,16 @@ class OrderController
      * PUT /orders/{id} — substitui equipamentos e peças por completo. O findOrFail() é necessário
      * porque OrderAggregate::retrieve() de um uuid desconhecido cria um agregado em branco em vez
      * de falhar, o que geraria um stored_events órfão sem nenhuma linha em `orders`.
+     *
+     * assertIsEditable() roda ANTES da transação, no mesmo espírito de assertNumberIsAvailable —
+     * uma OS cancelada/concluída/reprovada não deve mais ser editada (ver CLAUDE.md § Recusar uma
+     * remoção: cheque ANTES, nunca pelo erro do banco).
      */
     public function update(OrderRequest $request, string $id, OrderService $orderService, UpdateOrder $updateOrder): JsonResponse
     {
-        Order::findOrFail($id);
+        $order = Order::findOrFail($id);
+
+        $orderService->assertIsEditable($order);
 
         $data = $request->validated();
 

@@ -30,8 +30,7 @@
     .equipment-table th { background: #eee; text-align: left; }
     .equipment-table tr { page-break-inside: avoid; }
     .equipment-table .accessories-cell { padding: 0 4px 4px 24px; }
-    .accessories-table { table-layout: fixed; margin-top: 2px; page-break-inside: avoid; }
-    .accessories-table th { background: #f5f5f5; font-size: 9px; font-weight: bold; }
+    .equipment-table .accessories-cell div { font-size: 10px; color: #444; }
     .items-table { table-layout: fixed; }
     .items-table th { text-align: left; }
     .footer-table { table-layout: fixed; }
@@ -134,23 +133,9 @@
             @if ($equipment->accessories->isNotEmpty())
                 <tr>
                     <td colspan="5" class="accessories-cell">
-                        <table class="bordered accessories-table">
-                            <colgroup><col style="width: 60px;"><col></colgroup>
-                            <thead>
-                                <tr>
-                                    <th>Qtd.</th>
-                                    <th>Acessório</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($equipment->accessories as $accessory)
-                                    <tr>
-                                        <td>{{ $accessory->quantity }}</td>
-                                        <td>{{ $accessory->name }}</td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
+                        @foreach ($equipment->accessories as $accessory)
+                            <div>{{ $accessory->quantity }}x {{ $accessory->name }}</div>
+                        @endforeach
                     </td>
                 </tr>
             @endif

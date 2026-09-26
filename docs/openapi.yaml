@@ -682,7 +682,7 @@ paths:
   /orders:
     get:
       tags: [orders]
-      summary: Lista OS com filtros, ordenadas por data decrescente
+      summary: Lista OS com filtros, ordenadas por status (cancelada por último) e depois data decrescente
       operationId: listOrders
       parameters:
         - name: client_id

@@ -67,6 +67,10 @@ class OrderController
                     ->when($request->query('date_to'), fn ($q, $date) => $q->whereDate('date', '<=', $date))
                     // "status = 'canceled'" avalia pra 0/1 igual em MySQL e SQLite — ASC (padrão)
                     // põe as não-canceladas (0) antes das canceladas (1), sem depender de CASE.
+                    // Sem índice composto pra essa expressão (teria que ser numa coluna gerada,
+                    // status/date sozinhos já indexados não ajudam essa ordenação específica) —
+                    // aceito de propósito: filesort numa tabela pequena (app de uso interno) é
+                    // mais barato que a complexidade de manter uma coluna gerada só pra isso.
                     ->orderByRaw("status = 'canceled'")
                     ->orderBy('date', 'desc')
                     // Desempate pra OS's da mesma `date`: sem isso a ordem entre elas vinha
@@ -74,6 +78,12 @@ class OrderController
                     // ativas da mesma data) — created_at garante que a mais nova do grupo vá
                     // primeiro, de verdade, não só "por sorte" da ordem física das linhas.
                     ->orderBy('created_at', 'desc')
+                    // `created_at` tem precisão de segundo — duas OS's criadas no mesmo segundo
+                    // (dois cliques rápidos, import em lote) ainda cairiam na mesma indefinição.
+                    // `id` como último critério fecha isso de vez: não é uma segunda garantia de
+                    // "mais nova primeiro" (uuid não é ordenável por tempo), só garante que a
+                    // ORDEM NÃO MUDA entre uma consulta e outra — o problema original relatado.
+                    ->orderBy('id')
                     ->paginate($perPage);
 
                 // getData(true) — array, não stdClass (ver CLAUDE.md § Cache).

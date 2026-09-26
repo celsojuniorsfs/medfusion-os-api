@@ -874,8 +874,8 @@ paths:
       tags: [orders]
       summary: Gera o PDF da OS e o envia ao Object Storage
       description: >
-        Cada chamada gera um arquivo novo — nenhum PDF anterior é sobrescrito ou apagado (guarda
-        todos, sem limite de retenção por enquanto). GET devolve sempre o mais recente.
+        Cada chamada gera um arquivo novo e apaga o anterior do storage (só depois do novo estar
+        gravado) — a OS tem sempre um único PDF, o atual. GET devolve esse PDF atual.
       operationId: generateOrderPdf
       responses:
         "200":

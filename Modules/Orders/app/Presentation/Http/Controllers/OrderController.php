@@ -22,7 +22,7 @@ use Modules\Orders\Presentation\Http\Resources\OrderResource;
 
 class OrderController
 {
-    private const array WITH = ['client', 'user', 'equipments', 'items'];
+    private const array WITH = ['client', 'user', 'equipments.accessories', 'items'];
 
     /**
      * O retry de contenção transitória (`ConcurrencyErrorDetector` — "Lock wait timeout"/"database
@@ -207,8 +207,8 @@ class OrderController
                 $equipment = Equipment::where('client_id', $clientId)->findOrFail($entry['equipment_id']);
             } else {
                 // Um equipamento cadastrado implicitamente aqui entra sem acessório estruturado
-                // no catálogo (o técnico ajusta depois); $entry['accessories'] é texto livre que
-                // vai só pro snapshot desta OS, abaixo.
+                // no catálogo (o técnico ajusta depois); $entry['accessories'] é uma lista digitada
+                // pra esta OS, sem vínculo com o catálogo — vai só pro snapshot desta OS, abaixo.
                 $equipment = app(RegisterEquipment::class)(
                     $clientId,
                     $entry['name'],
@@ -226,7 +226,7 @@ class OrderController
                 'model' => $equipment->model,
                 'serial_number' => $equipment->serial_number,
                 'asset_tag' => $equipment->asset_tag,
-                'accessories' => $entry['accessories'] ?? null,
+                'accessories' => $entry['accessories'] ?? [],
             ];
         }, $equipments);
     }

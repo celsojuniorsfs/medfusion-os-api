@@ -158,13 +158,21 @@ fricção maior do que o problema que resolve.
 ### Snapshot do equipamento na OS (decisão da Fase 2)
 
 `order_equipments` guarda uma **cópia** dos dados do equipamento (`name`, `brand`, `model`,
-`serial_number`, `asset_tag`, `accessories`) no momento em que a OS é criada, além do vínculo
-`equipment_id`. Editar o cadastro do equipamento no catálogo depois **não** reescreve OS's
-antigas — o histórico fica fiel ao que foi atendido na época, mesmo que o cadastro seja corrigido
-depois. `equipment_id` continua existindo para navegação até o catálogo e para o filtro
-`GET /orders?equipment_id=X` da tela de histórico (ver `OrderEquipmentSnapshot` no OpenAPI).
-Mesmo padrão de "snapshot de linha de pedido" usado em qualquer sistema de vendas — o preço do
-produto na nota não muda se o catálogo mudar depois.
+`serial_number`, `asset_tag`) no momento em que a OS é criada, além do vínculo `equipment_id`.
+Editar o cadastro do equipamento no catálogo depois **não** reescreve OS's antigas — o histórico
+fica fiel ao que foi atendido na época, mesmo que o cadastro seja corrigido depois. `equipment_id`
+continua existindo para navegação até o catálogo e para o filtro `GET /orders?equipment_id=X` da
+tela de histórico (ver `OrderEquipmentSnapshot` no OpenAPI). Mesmo padrão de "snapshot de linha de
+pedido" usado em qualquer sistema de vendas — o preço do produto na nota não muda se o catálogo
+mudar depois.
+
+`accessories` desta OS é uma **lista** (`order_equipment_accessories`, uma linha por acessório,
+`name` + `quantity`) — também um snapshot, **sem** vínculo com o catálogo estruturado de
+acessórios do equipamento (`equipment_accessories`/`Accessory`): Orders não ganha uma leitura nova
+do módulo Accessories só por causa disso (ver CLAUDE.md § Grafo de dependências). Até 26/09/2026
+era um único campo de texto livre; OS's abertas antes dessa data tiveram o texto dividido
+automaticamente (por vírgula e ponto-e-vírgula, `quantity: 1` em cada pedaço) numa migration de
+backfill.
 
 ## Catálogo global de modelos de equipamento (api#101)
 
@@ -319,7 +327,7 @@ português — ex.: `reported_defect` guarda o texto "Equipamento sem funções 
 | Modelo (entrada do catálogo global) | `equipment_model` | `equipment_models`, `equipments.equipment_model_id` |
 | Número de série | `serial_number` | `equipments`, `order_equipments` |
 | Patrimônio | `asset_tag` | `equipments`, `order_equipments` |
-| Acessórios | `accessories` | `equipments`, `order_equipments` |
+| Acessórios | `accessories` | `equipment_accessories` (catálogo, via `equipments`), `order_equipment_accessories` (snapshot da OS, via `order_equipments`) |
 | Número (da OS) | `number` | `orders` |
 | Data | `date` | `orders` |
 | Retirado | `picked_up` | `orders` |

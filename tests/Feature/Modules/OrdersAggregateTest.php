@@ -63,7 +63,7 @@ class OrdersAggregateTest extends TestCase
                 reportedDefect: 'Não liga', maintenancePlan: null, notes: null,
                 paymentMethod: null, warrantyPeriod: null, proposalValidity: null, laborCost: 150.0,
             )
-            ->attachEquipment(null, 'Bisturi', 'Marca X', null, 'SN-123', null, null)
+            ->attachEquipment((string) Str::uuid(), null, 'Bisturi', 'Marca X', null, 'SN-123', null, [])
             ->addItem(2, 'Peça de reposição', 25.0)
             ->persist();
 
@@ -127,7 +127,7 @@ class OrdersAggregateTest extends TestCase
         $orderUuid = (string) Str::uuid();
         OrderAggregate::retrieve($orderUuid)
             ->open(1341, '2026-09-08', $this->aClientId(), $this->aUserId(), false, false, false, false, false, null, null, null, null, null, null, 50.0)
-            ->attachEquipment(null, 'Bisturi', null, null, null, null, null)
+            ->attachEquipment((string) Str::uuid(), null, 'Bisturi', null, null, null, null, [])
             ->addItem(2, 'Peça', 25.0)
             ->persist();
 

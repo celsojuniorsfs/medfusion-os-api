@@ -1194,6 +1194,16 @@ components:
         name: { type: string }
         quantity: { type: integer, minimum: 1 }
 
+    OrderEquipmentAccessory:
+      type: object
+      description: >
+        Acessório digitado pra este equipamento nesta OS — snapshot livre, sem vínculo com o
+        catálogo estruturado de acessórios (Accessory/EquipmentAccessory).
+      required: [name, quantity]
+      properties:
+        name: { type: string, maxLength: 255 }
+        quantity: { type: integer, minimum: 1 }
+
     EquipmentPhoto:
       type: object
       description: >
@@ -1311,9 +1321,13 @@ components:
         `OrderRequest::rules()` expressa esse oneOf com `required_without` nas duas pontas, já que
         o Laravel não tem oneOf nativo.
 
-        `accessories` aqui é TEXTO LIVRE (string, até 255 caracteres) e vale nos dois ramos — é o
-        snapshot desta OS (`order_equipments.accessories`), independente do catálogo estruturado
-        de acessórios do equipamento (api#92).
+        `accessories` aqui é uma LISTA de OrderEquipmentAccessory (`{name, quantity}`) e vale nos
+        dois ramos — é o snapshot desta OS (`order_equipment_accessories`), sem vínculo com o
+        catálogo estruturado de acessórios do equipamento (api#92). Até 26/09/2026 era texto livre
+        (string, até 255 caracteres); um cliente antigo que ainda mandar string aqui é aceito por
+        um shim transitório em `OrderRequest::prepareForValidation()` e convertido pra lista
+        (dividida por vírgula/ponto-e-vírgula) antes da validação — não confiar nesse formato pra
+        payloads novos, ele será removido depois que todos os clientes migrarem.
 
         Corrigido em 21/09/2026: o oneOf anterior referenciava `EquipmentInput` no segundo ramo,
         que desde o api#112 exige `equipment_model_id`/`no_accessories`/acessórios estruturados —
@@ -1330,7 +1344,9 @@ components:
           not: { required: [name] }
           properties:
             equipment_id: { type: string, format: uuid }
-            accessories: { type: ["string", "null"], maxLength: 255 }
+            accessories:
+              type: array
+              items: { $ref: "#/components/schemas/OrderEquipmentAccessory" }
         - type: object
           required: [name]
           not: { required: [equipment_id] }
@@ -1340,7 +1356,9 @@ components:
             model: { type: ["string", "null"], maxLength: 255 }
             serial_number: { type: ["string", "null"], maxLength: 255 }
             asset_tag: { type: ["string", "null"], maxLength: 255 }
-            accessories: { type: ["string", "null"], maxLength: 255 }
+            accessories:
+              type: array
+              items: { $ref: "#/components/schemas/OrderEquipmentAccessory" }
 
     OrderEquipmentSnapshot:
       type: object
@@ -1349,6 +1367,7 @@ components:
         — NÃO reflete edições feitas depois no catálogo (`equipments`). `equipment_id` aponta
         para o cadastro atual (usado para navegar até ele e para o filtro de histórico,
         `GET /orders?equipment_id=X`), mas os demais campos são a cópia congelada.
+      required: [accessories]
       properties:
         equipment_id: { type: ["string", "null"], format: uuid }
         name: { type: string }
@@ -1356,7 +1375,10 @@ components:
         model: { type: ["string", "null"] }
         serial_number: { type: ["string", "null"] }
         asset_tag: { type: ["string", "null"] }
-        accessories: { type: ["string", "null"] }
+        accessories:
+          type: array
+          description: Sempre presente, mesmo vazia ([]).
+          items: { $ref: "#/components/schemas/OrderEquipmentAccessory" }
 
     OrderItem:
       type: object

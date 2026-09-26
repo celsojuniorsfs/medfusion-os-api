@@ -5,6 +5,7 @@ namespace Modules\Orders\Infrastructure\Projectors;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Modules\Orders\Domain\Events\OrderEquipmentAttached;
 use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
 use Modules\Orders\Domain\Events\OrderItemAdded;
@@ -15,6 +16,7 @@ use Modules\Orders\Domain\Events\OrderStatusChanged;
 use Modules\Orders\Domain\Events\OrderUpdated;
 use Modules\Orders\Infrastructure\ReadModels\Order;
 use Modules\Orders\Infrastructure\ReadModels\OrderEquipment;
+use Modules\Orders\Infrastructure\ReadModels\OrderEquipmentAccessory;
 use Modules\Orders\Infrastructure\ReadModels\OrderItem;
 use Spatie\EventSourcing\EventHandlers\Projectors\Projector;
 
@@ -49,7 +51,10 @@ class OrderProjector extends Projector
 
     public function onOrderEquipmentAttached(OrderEquipmentAttached $event): void
     {
-        OrderEquipment::create([
+        $orderEquipment = OrderEquipment::create([
+            // null só em eventos gravados antes de orderEquipmentId existir (replay não-determinístico
+            // pra esses casos específicos, igual já era antes desta mudança).
+            'id' => $event->orderEquipmentId ?? (string) Str::uuid(),
             'order_id' => $event->aggregateRootUuid(),
             'equipment_id' => $event->equipmentId,
             'name' => $event->name,
@@ -57,8 +62,15 @@ class OrderProjector extends Projector
             'model' => $event->model,
             'serial_number' => $event->serialNumber,
             'asset_tag' => $event->assetTag,
-            'accessories' => $event->accessories,
         ]);
+
+        foreach ($event->accessories as $position => $accessory) {
+            $orderEquipment->accessories()->create([
+                'name' => $accessory['name'],
+                'quantity' => $accessory['quantity'],
+                'position' => $position,
+            ]);
+        }
 
         $this->forgetCache();
     }
@@ -186,6 +198,17 @@ class OrderProjector extends Projector
     public function resetState(?string $aggregateUuid = null): void
     {
         Schema::withoutForeignKeyConstraints(function () use ($aggregateUuid) {
+            // cascadeOnDelete não dispara aqui dentro (FK desligada de propósito) — apaga os
+            // filhos de order_equipments explicitamente antes dele, senão um replay deixaria
+            // order_equipment_accessories órfã apontando pra linhas já apagadas.
+            OrderEquipmentAccessory::when(
+                $aggregateUuid !== null,
+                fn ($query) => $query->whereIn(
+                    'order_equipment_id',
+                    OrderEquipment::select('id')->where('order_id', $aggregateUuid),
+                ),
+            )->delete();
+
             OrderItem::when($aggregateUuid !== null, fn ($query) => $query->where('order_id', $aggregateUuid))->delete();
             OrderEquipment::when($aggregateUuid !== null, fn ($query) => $query->where('order_id', $aggregateUuid))->delete();
             Order::when($aggregateUuid !== null, fn ($query) => $query->whereKey($aggregateUuid))->delete();

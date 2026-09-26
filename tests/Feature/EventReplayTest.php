@@ -20,6 +20,7 @@ use Modules\Identity\Domain\UserAggregate;
 use Modules\Orders\Application\AddOrderItem;
 use Modules\Orders\Application\AttachEquipmentToOrder;
 use Modules\Orders\Application\OpenOrder;
+use Modules\Orders\Infrastructure\Projectors\OrderProjector;
 use Modules\Orders\Infrastructure\ReadModels\Order;
 use Spatie\EventSourcing\Facades\Projectionist;
 use Tests\TestCase;
@@ -31,16 +32,22 @@ use Tests\TestCase;
  * CLAUDE.md), o que mascararia justamente o problema de FK entre módulos que o `resetState()`
  * precisa resolver.
  *
- * Colunas voláteis (timestamps, e o `id` de `equipment_accessories`/`order_equipments`/
+ * Colunas voláteis (timestamps, e o `id` de `equipment_accessories`/`order_equipment_accessories`/
  * `order_items` — gerado por `HasUuids`/`Str::uuid()` no momento da escrita, não lido do evento)
  * ficam fora da comparação: o contrato do replay é a projeção terminar com os MESMOS dados, não
  * com os mesmos ids internos de linhas que nada de fora referencia.
+ *
+ * `order_equipments` NÃO está nessa lista (ao contrário de antes): seu `id` agora vem de
+ * `OrderEquipmentAttached::orderEquipmentId`, gerado em `AttachEquipmentToOrder` e persistido no
+ * evento — determinístico entre a execução original e o replay. Mantê-lo fora da lista de
+ * voláteis é o que PROVA isso: se o id voltasse a ser gerado no projector, este teste falharia
+ * (a FK de order_equipment_accessories.order_equipment_id também deixaria de bater).
  */
 class EventReplayTest extends TestCase
 {
     use DatabaseMigrations;
 
-    private const array VOLATILE_ID_TABLES = ['equipment_accessories', 'order_equipments', 'order_items'];
+    private const array VOLATILE_ID_TABLES = ['equipment_accessories', 'order_equipment_accessories', 'order_items'];
 
     public function test_replaying_all_projectors_reconstructs_an_identical_projection(): void
     {
@@ -115,6 +122,39 @@ class EventReplayTest extends TestCase
     }
 
     /**
+     * Achado em code review: o ramo aginda-escopado de `OrderProjector::resetState()` (o `whereIn`
+     * que apaga só os acessórios das ordens do agregado sendo relido) nunca era exercitado por
+     * nenhum teste — todo replay de OrderProjector nos outros testes é completo
+     * ($aggregateUuid === null), que só passa pelo `delete()` sem filtro. Mesma garantia dos
+     * testes acima (photos/clients), agora pro filho novo order_equipment_accessories.
+     */
+    public function test_replaying_a_single_order_does_not_wipe_another_orders_accessories(): void
+    {
+        $clientId = $this->aClientId();
+        $userId = $this->aUserId();
+        $survivorEquipmentId = $this->anEquipmentId($clientId);
+        $targetEquipmentId = $this->anEquipmentId($clientId);
+
+        $survivorOrder = $this->anOrderWithEquipment($clientId, $userId, $survivorEquipmentId);
+        $targetOrder = $this->anOrderWithEquipment($clientId, $userId, $targetEquipmentId);
+
+        Projectionist::replay(collect([app(OrderProjector::class)]), 0, null, $targetOrder->id);
+
+        $this->assertDatabaseHas('orders', ['id' => $survivorOrder->id]);
+        $this->assertDatabaseHas('orders', ['id' => $targetOrder->id]);
+        $this->assertDatabaseHas('order_equipment_accessories', [
+            'order_equipment_id' => DB::table('order_equipments')->where('order_id', $survivorOrder->id)->value('id'),
+            'name' => 'Cabo de força',
+        ]);
+        $this->assertDatabaseHas('order_equipment_accessories', [
+            'order_equipment_id' => DB::table('order_equipments')->where('order_id', $targetOrder->id)->value('id'),
+            'name' => 'Cabo de força',
+        ]);
+        // 2 acessórios por OS (ver anOrderWithEquipment) x 2 OS's — nada duplicado, nada órfão.
+        $this->assertSame(4, DB::table('order_equipment_accessories')->count());
+    }
+
+    /**
      * @return array{0: EquipmentPhoto, 1: array<int, string>}
      */
     private function seedFullDataset(): array
@@ -142,7 +182,7 @@ class EventReplayTest extends TestCase
         return [$photo, [
             'users', 'clients', 'accessories', 'equipment_models',
             'equipments', 'equipment_accessories', 'equipment_photos',
-            'orders', 'order_equipments', 'order_items',
+            'orders', 'order_equipments', 'order_equipment_accessories', 'order_items',
         ]];
     }
 
@@ -153,7 +193,10 @@ class EventReplayTest extends TestCase
             true, false, false, false, false, 'Sem corte', 'Troca de mosfet', 'Observação', null, null, null, 150.0,
         );
 
-        return app(AttachEquipmentToOrder::class)($order->id, $equipmentId, 'Bisturi', 'WEM', 'SS-501S', '03140', null, null);
+        return app(AttachEquipmentToOrder::class)($order->id, $equipmentId, 'Bisturi', 'WEM', 'SS-501S', '03140', null, [
+            ['name' => 'Cabo de força', 'quantity' => 2],
+            ['name' => 'Pedal', 'quantity' => 1],
+        ]);
     }
 
     private function aUserId(): string

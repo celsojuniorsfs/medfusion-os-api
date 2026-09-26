@@ -29,6 +29,9 @@
     .equipment-table { table-layout: fixed; }
     .equipment-table th { background: #eee; text-align: left; }
     .equipment-table tr { page-break-inside: avoid; }
+    .equipment-table .accessories-cell { padding: 0 4px 4px 24px; }
+    .accessories-table { table-layout: fixed; margin-top: 2px; page-break-inside: avoid; }
+    .accessories-table th { background: #f5f5f5; font-size: 9px; font-weight: bold; }
     .items-table { table-layout: fixed; }
     .items-table th { text-align: left; }
     .footer-table { table-layout: fixed; }
@@ -104,12 +107,11 @@
 <div class="section-title">EQUIPAMENTOS</div>
 <table class="bordered equipment-table">
     <colgroup>
+        <col style="width: 30%;">
+        <col style="width: 18%;">
+        <col style="width: 18%;">
         <col style="width: 20%;">
         <col style="width: 14%;">
-        <col style="width: 13%;">
-        <col style="width: 13%;">
-        <col style="width: 10%;">
-        <col style="width: 30%;">
     </colgroup>
     <thead>
         <tr>
@@ -118,7 +120,6 @@
             <th>Modelo</th>
             <th>N/S</th>
             <th>PAT</th>
-            <th>Acessórios</th>
         </tr>
     </thead>
     <tbody>
@@ -129,8 +130,30 @@
                 <td>{{ $equipment->model }}</td>
                 <td>{{ $equipment->serial_number }}</td>
                 <td>{{ $equipment->asset_tag }}</td>
-                <td>{{ $equipment->accessories }}</td>
             </tr>
+            @if ($equipment->accessories->isNotEmpty())
+                <tr>
+                    <td colspan="5" class="accessories-cell">
+                        <table class="bordered accessories-table">
+                            <colgroup><col style="width: 60px;"><col></colgroup>
+                            <thead>
+                                <tr>
+                                    <th>Qtd.</th>
+                                    <th>Acessório</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($equipment->accessories as $accessory)
+                                    <tr>
+                                        <td>{{ $accessory->quantity }}</td>
+                                        <td>{{ $accessory->name }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </td>
+                </tr>
+            @endif
         @endforeach
     </tbody>
 </table>

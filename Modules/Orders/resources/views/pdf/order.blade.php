@@ -26,10 +26,15 @@
     .checkbox-table td { text-align: left; }
     .checkbox { display: inline-block; width: 10px; height: 10px; border: 1px solid #333; text-align: center; line-height: 10px; margin-right: 4px; }
     .checkbox.checked { background: #1b6e6e; color: #fff; }
+    .equipment-table { table-layout: fixed; }
     .equipment-table th { background: #eee; text-align: left; }
     .equipment-table tr { page-break-inside: avoid; }
+    .items-table { table-layout: fixed; }
+    .items-table th { text-align: left; }
+    .footer-table { table-layout: fixed; }
     .footer-table td { background: #1b6e6e; color: #fff; font-weight: bold; }
     .footer-table .value { background: #fff; color: #1a1a1a; font-weight: normal; }
+    .footer-wrap { table-layout: fixed; }
     .observation { margin-top: 6px; font-style: italic; }
 </style>
 </head>
@@ -146,22 +151,29 @@
 @endif
 
 <div class="section-title" style="margin-top: 8px;">PEÇAS REPOSIÇÃO</div>
-<table class="bordered">
+<table class="bordered items-table">
+    <colgroup>
+        <col style="width: 60px;">
+        <col>
+        <col style="width: 90px;">
+    </colgroup>
     <thead>
         <tr>
-            <th style="width: 60px;">Quant.</th>
+            <th>Quant.</th>
             <th>Descrição</th>
-            <th style="width: 90px;">Valor</th>
+            <th>Valor</th>
         </tr>
     </thead>
     <tbody>
-        @foreach ($order->items as $item)
+        @forelse ($order->items as $item)
             <tr>
                 <td>{{ rtrim(rtrim(number_format($item->quantity, 2, ',', '.'), '0'), ',') }}</td>
                 <td>{{ $item->description }}</td>
                 <td>{{ $item->unit_price !== null ? Fmt::currency($item->unit_price) : '' }}</td>
             </tr>
-        @endforeach
+        @empty
+            <tr><td colspan="3" style="color: #999;">Sem peças nesta OS.</td></tr>
+        @endforelse
     </tbody>
 </table>
 
@@ -172,27 +184,40 @@
     "Garantia de 90 dias para peças e 180 dias para serviço...") estica a LINHA inteira e deixa o
     lado curto (ex.: "Boleto bancário") com um vão vazio enorme embaixo — achado renderizando um
     PDF de verdade com esses dois campos de tamanhos bem diferentes.
+
+    `table-layout: fixed` + `colgroup`, não só `width` no <td>: sem isso, o dompdf auto-dimensiona
+    colunas pelo conteúdo, e um valor comprido de um lado empurrava a coluna do vizinho.
+
+    Cada valor tem um `?: '—'`: uma célula SEM NENHUM conteúdo (string vazia, não um espaço) não
+    ganha caixa nenhuma pro dompdf pintar o fundo — a célula do rótulo (teal) ao lado, essa sim com
+    conteúdo, escala e cobre o espaço que deveria ser da célula de valor. Só apareceu testando um
+    PDF de verdade com campo opcional em branco (Forma pagamento/Garantia/Validade proposta —
+    nenhum dos três é obrigatório no formulário).
 -->
-<table style="margin-top: 8px;">
+<table class="footer-wrap" style="margin-top: 8px;">
+    <colgroup><col style="width: 50%;"><col style="width: 50%;"></colgroup>
     <tr>
-        <td style="width: 50%; padding: 0 4px 0 0;">
+        <td style="padding: 0 4px 0 0;">
             <table class="footer-table">
-                <tr><td style="width: 45%;">Forma pagamento</td><td class="value">{{ $order->payment_method }}</td></tr>
-                <tr><td>Validade proposta</td><td class="value">{{ $order->proposal_validity }}</td></tr>
+                <colgroup><col style="width: 45%;"><col style="width: 55%;"></colgroup>
+                <tr><td>Forma pagamento</td><td class="value">{{ $order->payment_method ?: '—' }}</td></tr>
+                <tr><td>Validade proposta</td><td class="value">{{ $order->proposal_validity ?: '—' }}</td></tr>
             </table>
         </td>
-        <td style="width: 50%; padding: 0 0 0 4px;">
+        <td style="padding: 0 0 0 4px;">
             <table class="footer-table">
-                <tr><td style="width: 45%;">Garantia</td><td class="value">{{ $order->warranty_period }}</td></tr>
+                <colgroup><col style="width: 45%;"><col style="width: 55%;"></colgroup>
+                <tr><td>Garantia</td><td class="value">{{ $order->warranty_period ?: '—' }}</td></tr>
                 <tr><td>Mão de obra</td><td class="value">{{ Fmt::currency($order->labor_cost) }}</td></tr>
             </table>
         </td>
     </tr>
 </table>
 <table class="footer-table" style="margin-top: 4px;">
+    <colgroup><col style="width: 85%;"><col style="width: 15%;"></colgroup>
     <tr>
-        <td style="width: 85%; text-align: right;">Total</td>
-        <td class="value" style="width: 15%;">{{ Fmt::currency($order->total) }}</td>
+        <td style="text-align: right;">Total</td>
+        <td class="value">{{ Fmt::currency($order->total) }}</td>
     </tr>
 </table>
 

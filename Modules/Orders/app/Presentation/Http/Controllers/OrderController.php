@@ -41,8 +41,9 @@ class OrderController
 
     /**
      * GET /orders — filtros por client_id, equipment_id (usado pela tela de histórico do
-     * equipamento, ver escopo-v1.md), status e intervalo de data; ordenada por data decrescente
-     * (sem parâmetro de sort — mesma convenção já usada em GET /clients).
+     * equipamento, ver escopo-v1.md), status e intervalo de data; ordenada por status (cancelada
+     * sempre por último), depois data decrescente, depois criação decrescente (sem parâmetro de
+     * sort — mesma convenção já usada em GET /clients).
      */
     public function index(Request $request): JsonResponse
     {
@@ -64,7 +65,15 @@ class OrderController
                     ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
                     ->when($request->query('date_from'), fn ($q, $date) => $q->whereDate('date', '>=', $date))
                     ->when($request->query('date_to'), fn ($q, $date) => $q->whereDate('date', '<=', $date))
+                    // "status = 'canceled'" avalia pra 0/1 igual em MySQL e SQLite — ASC (padrão)
+                    // põe as não-canceladas (0) antes das canceladas (1), sem depender de CASE.
+                    ->orderByRaw("status = 'canceled'")
                     ->orderBy('date', 'desc')
+                    // Desempate pra OS's da mesma `date`: sem isso a ordem entre elas vinha
+                    // indefinida do banco (achado com uma OS cancelada aparecendo entre outras
+                    // ativas da mesma data) — created_at garante que a mais nova do grupo vá
+                    // primeiro, de verdade, não só "por sorte" da ordem física das linhas.
+                    ->orderBy('created_at', 'desc')
                     ->paginate($perPage);
 
                 // getData(true) — array, não stdClass (ver CLAUDE.md § Cache).

@@ -508,6 +508,37 @@ class OrdersHttpTest extends TestCase
         $response->assertJsonStructure(['data', 'links', 'meta']);
     }
 
+    /**
+     * Achado com uma OS cancelada aparecendo ACIMA de outras ativas da mesma data — a ordem
+     * entre elas vinha indefinida do banco, só `orderBy('date', 'desc')` sem desempate. Uma
+     * cancelada, criada PRIMEIRO (número mais baixo, deveria vir "antes" num desempate ingênuo por
+     * criação), ainda assim tem que cair pro final da lista pela regra de status.
+     */
+    public function test_lists_canceled_orders_last_even_when_created_first(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $canceled = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            ...$this->minimalOrderPayload($clientId, 1337),
+            'date' => '2026-09-25',
+        ])->json('data');
+        app(ChangeOrderStatus::class)($canceled['id'], OrderStatus::Canceled);
+
+        $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            ...$this->minimalOrderPayload($clientId, 1338),
+            'date' => '2026-09-25',
+        ]);
+
+        $response = $this->actingAs($user, 'sanctum')->getJson('/api/v1/orders');
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.number', 1338);
+        $response->assertJsonPath('data.0.status', 'open');
+        $response->assertJsonPath('data.1.number', 1337);
+        $response->assertJsonPath('data.1.status', 'canceled');
+    }
+
     public function test_lists_orders_filtered_by_client(): void
     {
         $user = $this->authenticatedUser();

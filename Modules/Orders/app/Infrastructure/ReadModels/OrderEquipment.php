@@ -7,9 +7,10 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Modules\Equipments\Infrastructure\ReadModels\Equipment;
 
-#[Fillable(['order_id', 'equipment_id', 'name', 'brand', 'model', 'serial_number', 'asset_tag', 'accessories'])]
+#[Fillable(['id', 'order_id', 'equipment_id', 'name', 'brand', 'model', 'serial_number', 'asset_tag'])]
 class OrderEquipment extends Model
 {
     use HasFactory, HasUuids;
@@ -40,5 +41,16 @@ class OrderEquipment extends Model
     public function equipment(): BelongsTo
     {
         return $this->belongsTo(Equipment::class);
+    }
+
+    /**
+     * Lista de acessórios digitada nesta OS — snapshot livre, sem vínculo com o catálogo
+     * estruturado de acessórios do equipamento (ver OrderEquipmentAccessory).
+     *
+     * @return HasMany<OrderEquipmentAccessory, $this>
+     */
+    public function accessories(): HasMany
+    {
+        return $this->hasMany(OrderEquipmentAccessory::class)->orderBy('position');
     }
 }

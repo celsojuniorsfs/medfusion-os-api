@@ -4,6 +4,7 @@ namespace Modules\Orders\Presentation\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Modules\Orders\Infrastructure\ReadModels\OrderEquipmentAccessory;
 
 /**
  * Schema OrderEquipmentSnapshot do openapi.yaml — o retrato do equipamento no momento em que a
@@ -23,7 +24,12 @@ class OrderEquipmentResource extends JsonResource
             'model' => $this->model,
             'serial_number' => $this->serial_number,
             'asset_tag' => $this->asset_tag,
-            'accessories' => $this->accessories,
+            'accessories' => $this->accessories
+                ->map(fn (OrderEquipmentAccessory $accessory) => [
+                    'name' => $accessory->name,
+                    'quantity' => $accessory->quantity,
+                ])
+                ->all(),
         ];
     }
 }

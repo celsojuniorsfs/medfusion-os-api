@@ -46,17 +46,21 @@ class OrderAggregate extends AggregateRoot
         return $this;
     }
 
+    /**
+     * @param  array<int, array{name: string, quantity: int}>  $accessories
+     */
     public function attachEquipment(
+        string $orderEquipmentId,
         ?string $equipmentId,
         string $name,
         ?string $brand,
         ?string $model,
         ?string $serialNumber,
         ?string $assetTag,
-        ?string $accessories,
+        array $accessories,
     ): self {
         $this->recordThat(new OrderEquipmentAttached(
-            $equipmentId, $name, $brand, $model, $serialNumber, $assetTag, $accessories,
+            $equipmentId, $name, $brand, $model, $serialNumber, $assetTag, $accessories, $orderEquipmentId,
         ));
 
         return $this;

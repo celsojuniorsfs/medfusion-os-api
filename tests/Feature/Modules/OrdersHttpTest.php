@@ -12,8 +12,11 @@ use Modules\Equipments\Domain\EquipmentAggregate;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
 use Modules\Orders\Application\OpenOrder;
+use Modules\Orders\Domain\Events\OrderEquipmentAttached;
 use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
 use Modules\Orders\Domain\Events\OrderItemsCleared;
+use Modules\Orders\Infrastructure\Projectors\OrderProjector;
+use Spatie\EventSourcing\Facades\Projectionist;
 use Tests\TestCase;
 
 class OrdersHttpTest extends TestCase
@@ -186,11 +189,12 @@ class OrdersHttpTest extends TestCase
     }
 
     /**
-     * Trava o contrato documentado em `docs/openapi.yaml::OrderEquipmentInput` (corrigido em
-     * 21/09/2026, ver o commit): `accessories` é texto livre e vale junto com `equipment_id` — é
-     * o snapshot desta OS, independente do catálogo estruturado de acessórios do equipamento.
+     * Trava o contrato documentado em `docs/openapi.yaml::OrderEquipmentInput`: `accessories` é
+     * uma lista de `{name, quantity}` e vale junto com `equipment_id` — é o snapshot desta OS
+     * (`order_equipment_accessories`), independente do catálogo estruturado de acessórios do
+     * equipamento.
      */
-    public function test_keeps_the_free_text_accessories_when_referencing_an_existing_equipment(): void
+    public function test_keeps_the_os_level_accessories_list_when_referencing_an_existing_equipment(): void
     {
         $user = $this->authenticatedUser();
         $clientId = $this->aClientId();
@@ -201,7 +205,13 @@ class OrdersHttpTest extends TestCase
             'date' => '2026-09-13',
             'client_id' => $clientId,
             'labor_cost' => 100.0,
-            'equipments' => [['equipment_id' => $equipmentId, 'accessories' => 'Cabo de força, pedal']],
+            'equipments' => [[
+                'equipment_id' => $equipmentId,
+                'accessories' => [
+                    ['name' => 'Cabo de força', 'quantity' => 2],
+                    ['name' => 'Pedal', 'quantity' => 1],
+                ],
+            ]],
             'items' => [],
         ];
 
@@ -209,7 +219,170 @@ class OrdersHttpTest extends TestCase
 
         $response->assertCreated();
         $response->assertJsonPath('data.equipments.0.equipment_id', $equipmentId);
-        $response->assertJsonPath('data.equipments.0.accessories', 'Cabo de força, pedal');
+        $response->assertJsonCount(2, 'data.equipments.0.accessories');
+        $response->assertJsonPath('data.equipments.0.accessories.0.name', 'Cabo de força');
+        $response->assertJsonPath('data.equipments.0.accessories.0.quantity', 2);
+        $response->assertJsonPath('data.equipments.0.accessories.1.name', 'Pedal');
+
+        $orderId = $response->json('data.id');
+        $this->assertDatabaseHas('order_equipment_accessories', [
+            'name' => 'Cabo de força', 'quantity' => 2, 'position' => 0,
+        ]);
+        $this->assertDatabaseHas('order_equipment_accessories', [
+            'name' => 'Pedal', 'quantity' => 1, 'position' => 1,
+        ]);
+        $this->assertSame(1, DB::table('order_equipments')->where('order_id', $orderId)->count());
+    }
+
+    /**
+     * Shim transitório em `OrderRequest::prepareForValidation()` (ver docs/openapi.yaml) — um
+     * cliente ainda não atualizado pro novo formato manda `accessories` como string livre, e a API
+     * aceita e divide em vez de estourar 422. Remover este teste junto com o shim.
+     */
+    public function test_accepts_the_legacy_free_text_accessories_shape_and_splits_it(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $equipmentId = $this->anEquipmentId($clientId, 'Monitor Cardíaco');
+
+        $payload = [
+            'number' => 1337,
+            'date' => '2026-09-13',
+            'client_id' => $clientId,
+            'labor_cost' => 100.0,
+            'equipments' => [['equipment_id' => $equipmentId, 'accessories' => 'Cabo de força; pedal']],
+            'items' => [],
+        ];
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertCreated();
+        $response->assertJsonCount(2, 'data.equipments.0.accessories');
+        $response->assertJsonPath('data.equipments.0.accessories.0.name', 'Cabo de força');
+        $response->assertJsonPath('data.equipments.0.accessories.0.quantity', 1);
+        $response->assertJsonPath('data.equipments.0.accessories.1.name', 'pedal');
+    }
+
+    public function test_rejects_an_accessory_without_a_name(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['equipments'][0]['accessories'] = [['quantity' => 1]];
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['equipments.0.accessories.0.name']);
+    }
+
+    public function test_rejects_an_accessory_with_zero_quantity(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['equipments'][0]['accessories'] = [['name' => 'Pedal', 'quantity' => 0]];
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors(['equipments.0.accessories.0.quantity']);
+    }
+
+    /**
+     * PUT substitui a lista de equipamentos inteira (OrderEquipmentsCleared) — as linhas de
+     * acessórios do equipamento antigo precisam sumir junto (cascade em
+     * order_equipment_accessories.order_equipment_id), não sobreviver órfãs.
+     */
+    public function test_replacing_equipments_on_update_removes_the_old_accessories(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            'number' => 1337,
+            'date' => '2026-09-13',
+            'client_id' => $clientId,
+            'labor_cost' => 100.0,
+            'equipments' => [['name' => 'Bisturi', 'accessories' => [['name' => 'Cabo', 'quantity' => 1]]]],
+            'items' => [],
+        ])->json('data');
+
+        $this->assertSame(1, DB::table('order_equipment_accessories')->count());
+
+        $response = $this->actingAs($user, 'sanctum')->putJson("/api/v1/orders/{$created['id']}", [
+            'number' => 1337,
+            'date' => '2026-09-13',
+            'client_id' => $clientId,
+            'labor_cost' => 100.0,
+            'equipments' => [['name' => 'Pinça', 'accessories' => []]],
+            'items' => [],
+        ]);
+
+        $response->assertOk();
+        $this->assertSame(0, DB::table('order_equipment_accessories')->count());
+    }
+
+    /**
+     * Eventos gravados antes desta mudança têm `accessories` como string e não têm
+     * `orderEquipmentId` no payload — o construtor de OrderEquipmentAttached precisa continuar
+     * desserializando isso (api#108/CLAUDE.md), dividindo o texto em várias entradas. O PUT no
+     * final exercita `OrderAggregate::retrieve()` relendo esse stream antigo (a lição do api#108 é
+     * que o sintoma some na LEITURA e só aparece ao reler o stream).
+     */
+    public function test_replaying_a_legacy_string_accessories_payload_splits_it_into_entries(): void
+    {
+        $clientId = $this->aClientId();
+        $user = $this->authenticatedUser();
+        $order = app(OpenOrder::class)(
+            1337, '2026-09-25', $clientId, $user->id,
+            false, false, false, false, false, null, null, null, null, null, null, 100.0,
+        );
+
+        DB::table('stored_events')->insert([
+            'aggregate_uuid' => $order->id,
+            'aggregate_version' => 2,
+            'event_version' => 1,
+            'event_class' => OrderEquipmentAttached::class,
+            // Formato pré-mudança: accessories como texto livre, sem orderEquipmentId.
+            'event_properties' => json_encode([
+                'equipmentId' => null,
+                'name' => 'Bisturi',
+                'brand' => null,
+                'model' => null,
+                'serialNumber' => null,
+                'assetTag' => null,
+                'accessories' => 'Cabo de força; pedal, , manual',
+            ]),
+            'meta_data' => json_encode(['aggregate-root-uuid' => $order->id, 'aggregate-root-version' => 2]),
+            'created_at' => now(),
+        ]);
+
+        Projectionist::replay(collect([app(OrderProjector::class)]));
+
+        $orderEquipmentId = DB::table('order_equipments')->where('order_id', $order->id)->value('id');
+        $names = DB::table('order_equipment_accessories')
+            ->where('order_equipment_id', $orderEquipmentId)
+            ->orderBy('position')
+            ->pluck('name');
+
+        $this->assertSame(['Cabo de força', 'pedal', 'manual'], $names->all());
+        $this->assertSame(3, DB::table('order_equipment_accessories')->where('quantity', 1)->count());
+
+        // Exercita retrieve() no stream antigo — não só a leitura da projeção.
+        $response = $this->actingAs($user, 'sanctum')
+            ->putJson("/api/v1/orders/{$order->id}", [
+                'number' => 1337,
+                'date' => '2026-09-25',
+                'client_id' => $clientId,
+                'labor_cost' => 100.0,
+                'equipments' => [['name' => 'Bisturi', 'accessories' => []]],
+                'items' => [],
+            ]);
+
+        $response->assertOk();
     }
 
     /**

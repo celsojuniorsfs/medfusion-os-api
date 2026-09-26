@@ -13,7 +13,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OrderPdfController
 {
-    private const array WITH = ['client', 'equipments', 'items'];
+    private const array WITH = ['client', 'equipments.accessories', 'items'];
 
     public function store(string $id, RecordOrderPdf $recordOrderPdf): JsonResponse
     {

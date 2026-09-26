@@ -31,16 +31,22 @@ use Tests\TestCase;
  * CLAUDE.md), o que mascararia justamente o problema de FK entre módulos que o `resetState()`
  * precisa resolver.
  *
- * Colunas voláteis (timestamps, e o `id` de `equipment_accessories`/`order_equipments`/
+ * Colunas voláteis (timestamps, e o `id` de `equipment_accessories`/`order_equipment_accessories`/
  * `order_items` — gerado por `HasUuids`/`Str::uuid()` no momento da escrita, não lido do evento)
  * ficam fora da comparação: o contrato do replay é a projeção terminar com os MESMOS dados, não
  * com os mesmos ids internos de linhas que nada de fora referencia.
+ *
+ * `order_equipments` NÃO está nessa lista (ao contrário de antes): seu `id` agora vem de
+ * `OrderEquipmentAttached::orderEquipmentId`, gerado em `AttachEquipmentToOrder` e persistido no
+ * evento — determinístico entre a execução original e o replay. Mantê-lo fora da lista de
+ * voláteis é o que PROVA isso: se o id voltasse a ser gerado no projector, este teste falharia
+ * (a FK de order_equipment_accessories.order_equipment_id também deixaria de bater).
  */
 class EventReplayTest extends TestCase
 {
     use DatabaseMigrations;
 
-    private const array VOLATILE_ID_TABLES = ['equipment_accessories', 'order_equipments', 'order_items'];
+    private const array VOLATILE_ID_TABLES = ['equipment_accessories', 'order_equipment_accessories', 'order_items'];
 
     public function test_replaying_all_projectors_reconstructs_an_identical_projection(): void
     {
@@ -142,7 +148,7 @@ class EventReplayTest extends TestCase
         return [$photo, [
             'users', 'clients', 'accessories', 'equipment_models',
             'equipments', 'equipment_accessories', 'equipment_photos',
-            'orders', 'order_equipments', 'order_items',
+            'orders', 'order_equipments', 'order_equipment_accessories', 'order_items',
         ]];
     }
 
@@ -153,7 +159,10 @@ class EventReplayTest extends TestCase
             true, false, false, false, false, 'Sem corte', 'Troca de mosfet', 'Observação', null, null, null, 150.0,
         );
 
-        return app(AttachEquipmentToOrder::class)($order->id, $equipmentId, 'Bisturi', 'WEM', 'SS-501S', '03140', null, null);
+        return app(AttachEquipmentToOrder::class)($order->id, $equipmentId, 'Bisturi', 'WEM', 'SS-501S', '03140', null, [
+            ['name' => 'Cabo de força', 'quantity' => 2],
+            ['name' => 'Pedal', 'quantity' => 1],
+        ]);
     }
 
     private function aUserId(): string

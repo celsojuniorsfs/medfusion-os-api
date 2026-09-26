@@ -4,6 +4,7 @@ namespace Modules\Orders\Presentation\Http\Requests;
 
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
+use Modules\Orders\Domain\OrderEquipmentAccessories;
 
 /**
  * Reutilizada em store e update — o schema OrderInput do openapi.yaml é o mesmo pros dois.
@@ -17,6 +18,30 @@ class OrderRequest extends FormRequest
     public function authorize(): bool
     {
         return true;
+    }
+
+    /**
+     * Shim transitório: um cliente Angular ainda não atualizado manda `accessories` como string
+     * livre (formato antigo) — sem isso, toda criação/edição de OS por ele passaria a estourar 422
+     * assim que esta API subisse, antes do web ser deployado. Remover depois que o web atualizado
+     * estiver em produção (não remover a normalização equivalente em OrderEquipmentAttached — essa
+     * é permanente, protege replay de eventos já gravados).
+     */
+    protected function prepareForValidation(): void
+    {
+        if (! is_array($this->input('equipments'))) {
+            return;
+        }
+
+        $equipments = array_map(function ($equipment) {
+            if (is_array($equipment) && is_string($equipment['accessories'] ?? null)) {
+                $equipment['accessories'] = OrderEquipmentAccessories::fromLegacyText($equipment['accessories']);
+            }
+
+            return $equipment;
+        }, $this->input('equipments'));
+
+        $this->merge(['equipments' => $equipments]);
     }
 
     /**
@@ -49,7 +74,9 @@ class OrderRequest extends FormRequest
             'equipments.*.model' => ['nullable', 'string', 'max:255'],
             'equipments.*.serial_number' => ['nullable', 'string', 'max:255'],
             'equipments.*.asset_tag' => ['nullable', 'string', 'max:255'],
-            'equipments.*.accessories' => ['nullable', 'string', 'max:255'],
+            'equipments.*.accessories' => ['nullable', 'array'],
+            'equipments.*.accessories.*.name' => ['required', 'string', 'max:255'],
+            'equipments.*.accessories.*.quantity' => ['required', 'integer', 'min:1'],
 
             // Pode vir vazio — peça é opcional, ver a regra cruzada em withValidator() abaixo.
             'items' => ['array'],

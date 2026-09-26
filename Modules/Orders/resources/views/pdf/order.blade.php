@@ -15,10 +15,10 @@
     table { width: 100%; border-collapse: collapse; }
     td, th { padding: 3px 4px; vertical-align: top; }
     .label { color: #555; font-size: 9px; text-transform: uppercase; }
-    .header-table td { padding: 0; }
+    .header-table td { padding: 0; vertical-align: middle; }
     .logo { width: 90px; }
-    .company-name { font-weight: bold; font-size: 13px; color: #1b6e6e; }
-    .company-details { font-size: 9px; color: #555; }
+    .company-name { font-weight: bold; font-size: 17px; color: #1b6e6e; margin-bottom: 4px; }
+    .company-details { font-size: 11px; color: #555; line-height: 1.6; }
     .order-number { color: #c0392b; font-weight: bold; font-size: 14px; }
     .section-title { background: #1b6e6e; color: #fff; font-weight: bold; padding: 4px 6px; margin-top: 8px; }
     .bordered { border: 1px solid #999; }

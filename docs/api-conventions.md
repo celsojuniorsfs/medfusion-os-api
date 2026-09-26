@@ -126,6 +126,15 @@ cancelar o serviço. Nenhum dos dois é reaberto — a necessidade real, confirm
 só poder **consultar** os dados da OS depois (`GET /orders/{id}` não depende do status), para o
 caso de o cliente retomar contato meses depois perguntando sobre aquele orçamento.
 
+### Editar (PUT) uma OS com status não-editável
+
+`PUT /orders/{id}` recusa com `409` (`OrderService::assertIsEditable`) quando o status atual é
+`canceled`, `completed` ou `not_approved` — **`completed` entra aqui mesmo sem ser tecnicamente
+terminal** no grafo de transições acima (pode ir pra `warranty_repair`): editar
+equipamentos/peças de uma OS já concluída não faz sentido operacional, é uma regra de edição, não
+de transição de status. `GET /orders/{id}` continua livre pra qualquer status, mesmo raciocínio
+do parágrafo anterior.
+
 ## Peças, mão de obra e o cálculo do total
 
 Corrige a decisão anterior ("valor da peça sempre obrigatório"). Casos reais levantados na

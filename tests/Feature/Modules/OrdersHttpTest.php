@@ -11,7 +11,9 @@ use Modules\Clients\Domain\Enums\PersonType;
 use Modules\Equipments\Domain\EquipmentAggregate;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
+use Modules\Orders\Application\ChangeOrderStatus;
 use Modules\Orders\Application\OpenOrder;
+use Modules\Orders\Domain\Enums\OrderStatus;
 use Modules\Orders\Domain\Events\OrderEquipmentAttached;
 use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
 use Modules\Orders\Domain\Events\OrderItemsCleared;
@@ -605,6 +607,35 @@ class OrdersHttpTest extends TestCase
         $this->assertDatabaseMissing('order_equipments', ['order_id' => $created['id'], 'equipment_id' => $oldEquipmentId]);
         $this->assertDatabaseHas('stored_events', ['aggregate_uuid' => $created['id'], 'event_class' => OrderEquipmentsCleared::class]);
         $this->assertDatabaseHas('stored_events', ['aggregate_uuid' => $created['id'], 'event_class' => OrderItemsCleared::class]);
+    }
+
+    /**
+     * PUT /orders/{id} não tinha trava de status nenhuma até esta issue — uma OS já
+     * cancelada/concluída/reprovada podia ser editada normalmente.
+     */
+    public function test_rejects_updating_an_order_with_a_status_that_cannot_be_edited(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $equipmentId = $this->anEquipmentId($clientId, 'Bisturi');
+
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            ...$this->minimalOrderPayload($clientId),
+            'equipments' => [['equipment_id' => $equipmentId]],
+        ])->json('data');
+
+        app(ChangeOrderStatus::class)($created['id'], OrderStatus::Canceled);
+
+        $newEquipmentId = $this->anEquipmentId($clientId, 'Monitor Novo');
+        $response = $this->actingAs($user, 'sanctum')->putJson("/api/v1/orders/{$created['id']}", [
+            ...$this->minimalOrderPayload($clientId),
+            'equipments' => [['equipment_id' => $newEquipmentId]],
+        ]);
+
+        $response->assertStatus(409);
+        // Nada mudou: o equipamento original continua lá, o novo nunca foi anexado.
+        $this->assertDatabaseHas('order_equipments', ['order_id' => $created['id'], 'equipment_id' => $equipmentId]);
+        $this->assertDatabaseMissing('order_equipments', ['order_id' => $created['id'], 'equipment_id' => $newEquipmentId]);
     }
 
     public function test_updating_an_order_keeping_its_own_number_is_not_a_duplicate(): void

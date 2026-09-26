@@ -813,7 +813,11 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
         "409":
-          description: Número de OS já utilizado por outra ordem de serviço
+          description: >
+            Duas causas possíveis, distinguidas só pela mensagem (mesmo schema Error nas duas):
+            número de OS já utilizado por outra ordem de serviço, ou a OS está com um status que
+            não aceita mais edição (canceled/completed/not_approved — ver
+            OrderService::assertIsEditable, api-conventions.md § Status da OS).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

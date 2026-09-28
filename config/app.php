@@ -73,8 +73,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | Usados por IdentityDatabaseSeeder e pela migration que promove esse usuário a
-    | general_admin (api#133) — nunca env() direto fora de config/*.php: o build roda
-    | `config:cache`, que não relê o .env em produção (ver docs/ambientes.md).
+    | general_admin (api#133) — mesmo motivo do frontend_url acima: nunca env() fora de
+    | config/*.php, porque config:cache roda no build, antes do seed/migrate no deploy.
     |
     */
 

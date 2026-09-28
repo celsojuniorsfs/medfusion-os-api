@@ -12,4 +12,4 @@ Artisan::command('inspire', function () {
 // e-mails, dentro da janela do cron. Isto só dispara de verdade se algo rodar `schedule:run`
 // periodicamente — conferir/configurar isso no painel da Laravel Cloud é passo de implantação
 // separado (ver docs/ambientes.md § Scheduler, a preencher).
-Schedule::command('orders:check-stalled')->daily();
+Schedule::command('orders:check-stalled')->daily()->withoutOverlapping();

@@ -237,8 +237,8 @@ Roda uma vez, manualmente, após o primeiro deploy bem-sucedido (issue api #57):
 
 - Usuário técnico inicial (e-mail/senha definidos fora do repositório, nunca commitados).
 
-**Variáveis, definidas no painel do environment** (lidas via `config('app.admin_*')`, nunca
-`env()` direto — o build roda `config:cache` antes do seed/migrate do deploy):
+**Variáveis, definidas no painel do environment** (mesma origem que as demais — lidas via
+`config('app.admin_*')`, nunca `env()` direto, pelo mesmo motivo do `FRONTEND_URL` acima):
 
 | Variável | Descrição |
 |---|---|

@@ -224,6 +224,15 @@ Roda uma vez, manualmente, após o primeiro deploy bem-sucedido (issue api #57):
 
 - Usuário técnico inicial (e-mail/senha definidos fora do repositório, nunca commitados).
 
+**Variáveis, definidas no painel do environment** (lidas via `config('app.admin_*')`, nunca
+`env()` direto — o build roda `config:cache` antes do seed/migrate do deploy):
+
+| Variável | Descrição |
+|---|---|
+| `ADMIN_EMAIL` | e-mail do usuário técnico inicial. Desde o api#133, é também quem a migration promove a `general_admin` — sem essa variável no ambiente onde a migration roda, o backfill é pulado (loga um aviso) e o usuário inicial fica `technician`. |
+| `ADMIN_PASSWORD` | senha do usuário técnico inicial. |
+| `ADMIN_NAME` | opcional, default `Administrador`. |
+
 Numeração da OS **não** entra nesta lista — não existe passo de seed nem tabela de contador para
 isso (ver api #44). O piso de **1336** está embutido no código
 (`OrderService::nextNumber()`, `Modules/Orders/app/Application/OrderService.php`): com a tabela

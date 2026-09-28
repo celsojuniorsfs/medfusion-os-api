@@ -44,6 +44,9 @@ class OrderProjector extends Projector
             'labor_cost' => $event->laborCost,
             'total' => $event->laborCost ?? 0,
             'status' => 'open',
+            // createdAt() do evento, não now() — senão um event-sourcing:replay reescreveria
+            // toda OS com a hora do replay, e não da abertura de verdade (api#135).
+            'status_changed_at' => $event->createdAt(),
             'preventive_maintenance' => $event->preventiveMaintenance,
             'calibration' => $event->calibration,
         ]);
@@ -101,6 +104,9 @@ class OrderProjector extends Projector
     {
         Order::whereKey($event->aggregateRootUuid())->update([
             'status' => $event->to,
+            // Reinicia a contagem de dias parada (api#135) — createdAt() do evento, não now(),
+            // pelo mesmo motivo do onOrderOpened acima.
+            'status_changed_at' => $event->createdAt(),
         ]);
 
         $this->forgetCache();

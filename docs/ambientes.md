@@ -14,9 +14,10 @@
   `laravel.test` (nome padrão do Sail) para `app` em 14/09/2026 — só o nome no Compose muda, a
   imagem continua `sail-8.4/app`.
 - Mailpit, um worker de fila dedicado e o Adminer ficam atrás do profile `extra`
-  (`docker compose --profile extra up -d`) — sem uso real ainda (fila e e-mail são só
-  documentados, a notificação automática da OS não está implementada), então não rodam por
-  padrão.
+  (`docker compose --profile extra up -d`). Desde o api#135 (alerta de OS parada) o Mailpit tem
+  uso real — é onde os e-mails de `orders:check-stalled` aparecem em dev — mas continuam fora do
+  padrão porque a fila em si segue sem uso (envio é síncrono, ver `docs/architecture.md`) e a
+  notificação automática da OS pro cliente final (api#65) ainda não está implementada.
 - `.env` a partir de [`.env.example`](../.env.example) (versionado nesta issue).
 - Frontend: `ng serve`, `environment.ts` apontando `apiUrl: 'http://localhost:8000/api/v1'` —
   roda fora do Docker, sem mudança.
@@ -55,6 +56,18 @@ plataforma:
   deploy.
 
 `php artisan config:cache` roda como parte do build, não do deploy.
+
+### Scheduler (novo — api#135)
+
+`orders:check-stalled` (alerta de OS parada/aguardando aprovação, ver seção seguinte) é o
+primeiro comando agendado do projeto — registrado em `routes/console.php` via `Schedule::`, rodando
+uma vez por dia.
+
+**Pendente de verificar na implantação (F6)**: `Schedule::` só dispara de verdade se algo chamar
+`php artisan schedule:run` periodicamente. Não existia nenhum agendamento até agora, então isso
+nunca foi configurado no painel da Laravel Cloud. Conferir se a plataforma já cobre isso
+automaticamente pra apps com schedule definido, ou se precisa de um Scheduled Job configurado à
+mão no painel — sem esse passo, o comando existe mas nunca roda em produção.
 
 ### Variáveis de ambiente
 

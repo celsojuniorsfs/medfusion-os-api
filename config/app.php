@@ -56,6 +56,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontend URL
+    |--------------------------------------------------------------------------
+    |
+    | Origem do Angular (medfusion-os-web), usada em config/cors.php e em links de e-mail
+    | (api#135) que apontam de volta pro app — nunca env() direto fora de config/*.php: o build
+    | roda `config:cache`, que não relê o .env em produção (ver docs/ambientes.md).
+    |
+    */
+
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:4200'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Usuário técnico inicial (seed)
     |--------------------------------------------------------------------------
     |

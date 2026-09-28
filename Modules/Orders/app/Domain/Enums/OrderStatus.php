@@ -41,4 +41,21 @@ enum OrderStatus: string
     {
         return in_array($target, $this->allowedNextStatuses(), strict: true);
     }
+
+    /**
+     * Marcos (em dias) do alerta de "OS parada" (api#135), validado com o cliente na rodada 3 do
+     * artefato de alertas. AwaitingApproval tem escada própria e mais longa — prefeitura costuma
+     * demorar mais pra aprovar. Os estados finais (NotApproved, Canceled) e o pós-aprovação
+     * (Completed, WarrantyRepair) não alertam: uma vez lá, não há "parado" a cobrar.
+     *
+     * @return list<int>
+     */
+    public function stalledAlertMilestoneDays(): array
+    {
+        return match ($this) {
+            self::Open, self::InAnalysis, self::ExternalQuote, self::Approved => [7, 15, 30],
+            self::AwaitingApproval => [7, 15, 30, 45, 60],
+            self::NotApproved, self::Canceled, self::Completed, self::WarrantyRepair => [],
+        };
+    }
 }

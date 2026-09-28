@@ -42,6 +42,8 @@ class UpdateOrder
         ?string $warrantyPeriod = null,
         ?string $proposalValidity = null,
         ?float $laborCost = null,
+        bool $preventiveMaintenance = false,
+        bool $calibration = false,
     ): Order {
         $this->orderService->assertNumberIsAvailable($number, ignoreOrderId: $orderId);
 
@@ -51,6 +53,7 @@ class UpdateOrder
                 $pickedUp, $warranty, $technicalTraining, $onSiteQuote, $rental,
                 $reportedDefect, $maintenancePlan, $notes,
                 $paymentMethod, $warrantyPeriod, $proposalValidity, $laborCost,
+                $preventiveMaintenance, $calibration,
             ) {
                 OrderAggregate::retrieve($orderId)
                     ->update(
@@ -58,6 +61,7 @@ class UpdateOrder
                         $pickedUp, $warranty, $technicalTraining, $onSiteQuote, $rental,
                         $reportedDefect, $maintenancePlan, $notes,
                         $paymentMethod, $warrantyPeriod, $proposalValidity, $laborCost,
+                        $preventiveMaintenance, $calibration,
                     )
                     ->clearEquipments()
                     ->clearItems()

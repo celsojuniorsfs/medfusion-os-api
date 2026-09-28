@@ -35,12 +35,15 @@ class OrderAggregate extends AggregateRoot
         ?string $warrantyPeriod,
         ?string $proposalValidity,
         ?float $laborCost,
+        bool $preventiveMaintenance = false,
+        bool $calibration = false,
     ): self {
         $this->recordThat(new OrderOpened(
             $number, $date, $clientId, $userId,
             $pickedUp, $warranty, $technicalTraining, $onSiteQuote, $rental,
             $reportedDefect, $maintenancePlan, $notes,
             $paymentMethod, $warrantyPeriod, $proposalValidity, $laborCost,
+            $preventiveMaintenance, $calibration,
         ));
 
         return $this;
@@ -94,12 +97,15 @@ class OrderAggregate extends AggregateRoot
         ?string $warrantyPeriod,
         ?string $proposalValidity,
         ?float $laborCost,
+        bool $preventiveMaintenance = false,
+        bool $calibration = false,
     ): self {
         $this->recordThat(new OrderUpdated(
             $number, $date, $clientId,
             $pickedUp, $warranty, $technicalTraining, $onSiteQuote, $rental,
             $reportedDefect, $maintenancePlan, $notes,
             $paymentMethod, $warrantyPeriod, $proposalValidity, $laborCost,
+            $preventiveMaintenance, $calibration,
         ));
 
         return $this;

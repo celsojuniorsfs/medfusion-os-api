@@ -26,5 +26,9 @@ class OrderUpdated extends ShouldBeStored
         public readonly ?string $warrantyPeriod,
         public readonly ?string $proposalValidity,
         public readonly ?float $laborCost,
+        // Por último e com default (não nullable) — eventos gravados antes do api#134 não têm
+        // essas chaves no payload; replay usa false, o mesmo default do formulário.
+        public readonly bool $preventiveMaintenance = false,
+        public readonly bool $calibration = false,
     ) {}
 }

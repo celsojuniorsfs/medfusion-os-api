@@ -58,6 +58,10 @@ class OrderRequest extends FormRequest
             'technical_training' => ['boolean'],
             'on_site_quote' => ['boolean'],
             'rental' => ['boolean'],
+            // Alimenta a contagem de 12 meses até a próxima revisão (medfusion-os-api#136) — por
+            // OS, aplica a todos os equipamentos dela (limitação conhecida, ver #134).
+            'preventive_maintenance' => ['boolean'],
+            'calibration' => ['boolean'],
             'reported_defect' => ['nullable', 'string'],
             'maintenance_plan' => ['nullable', 'string'],
             'notes' => ['nullable', 'string'],

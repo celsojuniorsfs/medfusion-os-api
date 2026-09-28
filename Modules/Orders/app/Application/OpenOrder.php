@@ -44,6 +44,8 @@ class OpenOrder
         ?string $warrantyPeriod = null,
         ?string $proposalValidity = null,
         ?float $laborCost = null,
+        bool $preventiveMaintenance = false,
+        bool $calibration = false,
     ): Order {
         $this->orderService->assertNumberIsAvailable($number);
 
@@ -55,6 +57,7 @@ class OpenOrder
                 $pickedUp, $warranty, $technicalTraining, $onSiteQuote, $rental,
                 $reportedDefect, $maintenancePlan, $notes,
                 $paymentMethod, $warrantyPeriod, $proposalValidity, $laborCost,
+                $preventiveMaintenance, $calibration,
             ) {
                 // O OrderProjector roda síncrono, dentro desta mesma transação: se Order::create()
                 // disparar a violação da constraint `unique` de orders.number, o rollback desfaz
@@ -66,6 +69,7 @@ class OpenOrder
                         $pickedUp, $warranty, $technicalTraining, $onSiteQuote, $rental,
                         $reportedDefect, $maintenancePlan, $notes,
                         $paymentMethod, $warrantyPeriod, $proposalValidity, $laborCost,
+                        $preventiveMaintenance, $calibration,
                     )
                     ->persist();
             });

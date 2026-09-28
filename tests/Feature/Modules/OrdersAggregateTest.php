@@ -9,6 +9,7 @@ use Modules\Clients\Domain\ClientAggregate;
 use Modules\Clients\Domain\Enums\PersonType;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Orders\Domain\Enums\OrderStatus;
+use Modules\Orders\Domain\Events\OrderOpened;
 use Modules\Orders\Domain\Exceptions\InvalidOrderStatusTransition;
 use Modules\Orders\Domain\OrderAggregate;
 use Modules\Orders\Infrastructure\ReadModels\Order;
@@ -74,6 +75,43 @@ class OrdersAggregateTest extends TestCase
         $this->assertSame(1, $order->items->count());
         // total = labor_cost (150) + quantity (2) * unit_price (25) = 200
         $this->assertEqualsWithDelta(200.0, (float) $order->total, 0.001);
+    }
+
+    public function test_opening_an_order_with_preventive_maintenance_and_calibration_is_projected(): void
+    {
+        $orderUuid = (string) Str::uuid();
+
+        OrderAggregate::retrieve($orderUuid)
+            ->open(
+                1350, '2026-09-08', $this->aClientId(), $this->aUserId(),
+                pickedUp: false, warranty: false, technicalTraining: false, onSiteQuote: false, rental: false,
+                reportedDefect: null, maintenancePlan: null, notes: null,
+                paymentMethod: null, warrantyPeriod: null, proposalValidity: null, laborCost: null,
+                preventiveMaintenance: true, calibration: true,
+            )
+            ->persist();
+
+        $order = Order::findOrFail($orderUuid);
+        $this->assertTrue((bool) $order->preventive_maintenance);
+        $this->assertTrue((bool) $order->calibration);
+    }
+
+    /**
+     * Um OrderOpened gravado antes do api#134 não tem preventiveMaintenance/calibration no
+     * payload — o construtor precisa continuar desserializando com o default (ver CLAUDE.md §
+     * Acrescentar campo a um evento já gravado). Testado direto no evento, sem passar por
+     * replay de verdade: é o mesmo nível de garantia, mais barato de rodar.
+     */
+    public function test_order_opened_event_defaults_preventive_fields_when_absent_from_old_payload(): void
+    {
+        $event = new OrderOpened(
+            1351, '2026-09-08', (string) Str::uuid(), (string) Str::uuid(),
+            false, false, false, false, false,
+            null, null, null, null, null, null, null,
+        );
+
+        $this->assertFalse($event->preventiveMaintenance);
+        $this->assertFalse($event->calibration);
     }
 
     public function test_valid_status_transition_is_projected(): void

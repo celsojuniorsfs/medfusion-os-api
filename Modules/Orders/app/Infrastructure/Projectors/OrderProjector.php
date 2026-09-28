@@ -44,6 +44,8 @@ class OrderProjector extends Projector
             'labor_cost' => $event->laborCost,
             'total' => $event->laborCost ?? 0,
             'status' => 'open',
+            'preventive_maintenance' => $event->preventiveMaintenance,
+            'calibration' => $event->calibration,
         ]);
 
         $this->forgetCache();
@@ -132,6 +134,8 @@ class OrderProjector extends Projector
             'proposal_validity' => $event->proposalValidity,
             'labor_cost' => $event->laborCost,
             'total' => ($event->laborCost ?? 0) + $itemsTotal,
+            'preventive_maintenance' => $event->preventiveMaintenance,
+            'calibration' => $event->calibration,
         ]);
 
         $this->forgetCache();

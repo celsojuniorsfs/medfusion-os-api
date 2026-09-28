@@ -1438,6 +1438,16 @@ components:
           { type: boolean, description: "Treinamento técnico" }
         on_site_quote: { type: boolean, description: "Orç. local" }
         rental: { type: boolean, description: "Locação" }
+        preventive_maintenance:
+          {
+            type: boolean,
+            description: "Preventiva — alimenta a contagem de 12 meses até a próxima revisão (medfusion-os-api#136). Por OS, aplica a todos os equipamentos dela (limitação conhecida, ver #134)",
+          }
+        calibration:
+          {
+            type: boolean,
+            description: "Calibração — manutenção distinta da preventiva, mas sem vencimento próprio: sempre sai na mesma data/mesma OS",
+          }
         reported_defect:
           { type: ["string", "null"], description: "Defeito apresentado" }
         maintenance_plan:
@@ -1489,6 +1499,8 @@ components:
         technical_training: { type: boolean, default: false }
         on_site_quote: { type: boolean, default: false }
         rental: { type: boolean, default: false }
+        preventive_maintenance: { type: boolean, default: false }
+        calibration: { type: boolean, default: false }
         reported_defect: { type: ["string", "null"] }
         maintenance_plan: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }

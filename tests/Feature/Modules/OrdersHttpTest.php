@@ -162,6 +162,40 @@ class OrdersHttpTest extends TestCase
         $this->assertDatabaseHas('equipments', ['client_id' => $clientId, 'name' => 'Bisturi Elétrico']);
     }
 
+    public function test_creates_an_order_marked_as_preventive_maintenance_and_calibration(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['preventive_maintenance'] = true;
+        $payload['calibration'] = true;
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.preventive_maintenance', true);
+        $response->assertJsonPath('data.calibration', true);
+        $this->assertDatabaseHas('orders', [
+            'number' => 1337,
+            'preventive_maintenance' => true,
+            'calibration' => true,
+        ]);
+    }
+
+    public function test_creating_an_order_without_preventive_or_calibration_defaults_to_false(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId));
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.preventive_maintenance', false);
+        $response->assertJsonPath('data.calibration', false);
+    }
+
     public function test_creates_an_order_referencing_an_existing_equipment_and_with_items(): void
     {
         $user = $this->authenticatedUser();

@@ -5,6 +5,7 @@ namespace Tests\Feature\Modules;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Modules\Identity\Domain\Enums\UserRole;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
 use Spatie\EventSourcing\StoredEvents\Models\EloquentStoredEvent;
@@ -19,10 +20,14 @@ class IdentityAggregateTest extends TestCase
         $uuid = (string) Str::uuid();
 
         UserAggregate::retrieve($uuid)
-            ->register('Ana Técnica', 'ana@medfusion.example', Hash::make('segredo'))
+            ->register('Ana Técnica', 'ana@medfusion.example', Hash::make('segredo'), UserRole::Administrative)
             ->persist();
 
-        $this->assertDatabaseHas('users', ['id' => $uuid, 'email' => 'ana@medfusion.example']);
+        $this->assertDatabaseHas('users', [
+            'id' => $uuid,
+            'email' => 'ana@medfusion.example',
+            'role' => UserRole::Administrative->value,
+        ]);
         $this->assertSame(1, EloquentStoredEvent::query()->where('aggregate_uuid', $uuid)->count());
 
         $this->assertTrue(Hash::check('segredo', User::findOrFail($uuid)->password));
@@ -33,7 +38,7 @@ class IdentityAggregateTest extends TestCase
         $uuid = (string) Str::uuid();
 
         UserAggregate::retrieve($uuid)
-            ->register('Ana Técnica', 'ana@medfusion.example', Hash::make('segredo'))
+            ->register('Ana Técnica', 'ana@medfusion.example', Hash::make('segredo'), UserRole::Technician)
             ->persist();
 
         UserAggregate::retrieve($uuid)

@@ -56,6 +56,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Usuário técnico inicial (seed)
+    |--------------------------------------------------------------------------
+    |
+    | Usados por IdentityDatabaseSeeder e pela migration que promove esse usuário a
+    | general_admin (api#133) — nunca env() direto fora de config/*.php: o build roda
+    | `config:cache`, que não relê o .env em produção (ver docs/ambientes.md).
+    |
+    */
+
+    'admin_name' => env('ADMIN_NAME', 'Administrador'),
+
+    'admin_email' => env('ADMIN_EMAIL'),
+
+    'admin_password' => env('ADMIN_PASSWORD'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

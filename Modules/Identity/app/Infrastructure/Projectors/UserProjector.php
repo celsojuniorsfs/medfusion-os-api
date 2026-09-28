@@ -3,6 +3,7 @@
 namespace Modules\Identity\Infrastructure\Projectors;
 
 use Illuminate\Support\Facades\Schema;
+use Modules\Identity\Domain\Enums\UserRole;
 use Modules\Identity\Domain\Events\UserPasswordChanged;
 use Modules\Identity\Domain\Events\UserRegistered;
 use Modules\Identity\Infrastructure\ReadModels\User;
@@ -17,6 +18,9 @@ class UserProjector extends Projector
             'name' => $event->name,
             'email' => $event->email,
             'password' => $event->password,
+            // Eventos gravados antes do api#133 não têm role no payload — trata quem já
+            // existia como technician (o papel mais restrito, nunca recebe alerta sozinho).
+            'role' => $event->role ?? UserRole::Technician->value,
         ]);
     }
 

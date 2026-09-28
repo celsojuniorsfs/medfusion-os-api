@@ -5,6 +5,7 @@ namespace Tests\Feature\Modules;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Modules\Identity\Domain\Enums\UserRole;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
 use Tests\TestCase;
@@ -13,11 +14,14 @@ class IdentityHttpTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function aUser(string $email = 'ana@medfusion.example', string $password = 'segredo123'): User
-    {
+    private function aUser(
+        string $email = 'ana@medfusion.example',
+        string $password = 'segredo123',
+        UserRole $role = UserRole::Technician,
+    ): User {
         $uuid = (string) Str::uuid();
         UserAggregate::retrieve($uuid)
-            ->register('Ana Técnica', $email, Hash::make($password))
+            ->register('Ana Técnica', $email, Hash::make($password), $role)
             ->persist();
 
         return User::findOrFail($uuid);

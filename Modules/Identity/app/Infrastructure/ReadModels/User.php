@@ -11,13 +11,14 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Modules\Identity\Database\Factories\UserFactory;
+use Modules\Identity\Domain\Enums\UserRole;
 
 /**
  * Read model do módulo Identity — construído pelo UserProjector a partir dos eventos do
  * UserAggregate. id é o mesmo uuid do agregado (identidade compartilhada agregado/projeção).
  */
 // "id" entra no fillable porque o UserProjector cria a linha com o mesmo uuid do agregado.
-#[Fillable(['id', 'name', 'email', 'password'])]
+#[Fillable(['id', 'name', 'email', 'password', 'role'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -32,6 +33,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'role' => UserRole::class,
         ];
     }
 

@@ -1034,10 +1034,20 @@ components:
 
     User:
       type: object
+      description: >
+        role (api#133) é uma fatia mínima pro sistema de alertas mirar quem recebe cada aviso e
+        liberar o liga/desliga só pro admin geral — não é o RBAC completo do futuro perfil
+        Financeiro. Nenhum endpoint existente passa a checar isso.
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
         email: { type: string, format: email }
+        role:
+          {
+            type: string,
+            enum: [technician, administrative, general_admin],
+            description: "Técnico (nunca recebe alerta), administrativo da assistência, ou administrador geral (único que liga/desliga notificação)",
+          }
 
     Client:
       type: object

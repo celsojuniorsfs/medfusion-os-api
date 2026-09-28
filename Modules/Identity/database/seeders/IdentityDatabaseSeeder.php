@@ -5,6 +5,7 @@ namespace Modules\Identity\Database\Seeders;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Modules\Identity\Application\RegisterUser;
+use Modules\Identity\Domain\Enums\UserRole;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
 
@@ -31,7 +32,7 @@ class IdentityDatabaseSeeder extends Seeder
         $existing = User::where('email', $email)->first();
 
         if (! $existing) {
-            (new RegisterUser)(env('ADMIN_NAME', 'Administrador'), $email, $password);
+            (new RegisterUser)(env('ADMIN_NAME', 'Administrador'), $email, $password, UserRole::GeneralAdmin);
 
             return;
         }

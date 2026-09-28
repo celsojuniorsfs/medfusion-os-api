@@ -3,6 +3,7 @@
 namespace Modules\Orders\Providers;
 
 use Modules\Orders\Infrastructure\Projectors\OrderProjector;
+use Modules\Orders\Presentation\Console\Commands\CheckStalledOrdersCommand;
 use Nwidart\Modules\Support\ModuleServiceProvider;
 use Spatie\EventSourcing\Facades\Projectionist;
 
@@ -11,7 +12,9 @@ use Spatie\EventSourcing\Facades\Projectionist;
  * status (api #45, PR 2), PDF e notificação continuam issues à parte. Migrations são
  * descobertas automaticamente pelo pacote (auto-discover.migrations em config/modules.php).
  * Projectors/Reactors NÃO são auto-descobertos (ver config/event-sourcing.php) — cada módulo
- * registra os seus aqui.
+ * registra os seus aqui. Comandos artisan também não — o namespace do módulo
+ * (Modules\Orders\...) não bate com a convenção padrão (App\Console\Commands) que o Laravel
+ * auto-descobre.
  */
 class OrdersServiceProvider extends ModuleServiceProvider
 {
@@ -31,5 +34,9 @@ class OrdersServiceProvider extends ModuleServiceProvider
         parent::boot();
 
         Projectionist::addProjector(OrderProjector::class);
+
+        $this->commands([
+            CheckStalledOrdersCommand::class,
+        ]);
     }
 }

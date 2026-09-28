@@ -23,7 +23,7 @@ use Modules\Identity\Infrastructure\ReadModels\User;
     'preventive_maintenance', 'calibration',
     'reported_defect', 'maintenance_plan', 'notes',
     'payment_method', 'warranty_period', 'proposal_validity',
-    'labor_cost', 'total', 'status', 'certificate_number',
+    'labor_cost', 'total', 'status', 'status_changed_at', 'certificate_number',
     'pdf_path', 'pdf_generated_at',
 ])]
 class Order extends Model
@@ -47,6 +47,7 @@ class Order extends Model
             'calibration' => 'boolean',
             'labor_cost' => 'decimal:2',
             'total' => 'decimal:2',
+            'status_changed_at' => 'datetime',
             'pdf_generated_at' => 'datetime',
         ];
     }

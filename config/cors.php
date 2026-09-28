@@ -22,7 +22,7 @@ return [
     'allowed_methods' => ['*'],
 
     'allowed_origins' => [
-        env('FRONTEND_URL', 'http://localhost:4200'),
+        config('app.frontend_url'),
     ],
 
     // Laravel não faz wildcard em allowed_origins — os previews da Vercel

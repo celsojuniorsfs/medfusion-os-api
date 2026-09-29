@@ -22,7 +22,7 @@ use Modules\Alerts\Infrastructure\ReadModels\EquipmentRevisionAlert;
 class CheckEquipmentRevisions
 {
     /**
-     * @param  list<array{equipment_id: string, order_id: string, base_date: string, equipment_name: string, order_number: int, client_name: ?string}>  $eligibleCycles
+     * @param  list<array{equipment_id: string, order_id: string, base_date: string, order_number: int, client_name: ?string}>  $eligibleCycles
      * @param  list<string>  $recipientEmails  administrative + general_admin, avisos de mês 6/11
      * @param  list<string>  $billingEmails  só general_admin, cobrança de 7 dias
      * @return array{revisions_sent: int, billing_sent: int}
@@ -77,7 +77,7 @@ class CheckEquipmentRevisions
     }
 
     /**
-     * @param  array{equipment_id: string, order_id: string, base_date: string, equipment_name: string, order_number: int, client_name: ?string}  $cycle
+     * @param  array{equipment_id: string, order_id: string, base_date: string, order_number: int, client_name: ?string}  $cycle
      * @param  list<string>  $recipientEmails
      */
     private function checkCycle(array $cycle, array $recipientEmails): int

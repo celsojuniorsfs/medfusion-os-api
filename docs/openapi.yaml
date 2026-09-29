@@ -50,8 +50,10 @@ tags:
     description: Ordens de Serviço
   - name: alerts
     description: >
-      Alertas operacionais (api#136) — só administrative/general_admin. Revisão anual por
-      equipamento é o primeiro tipo; outros tipos (hoje só por e-mail) entram numa issue futura.
+      Alertas operacionais internos (api#136) — só administrative/general_admin, avisados pelo
+      painel de alertas do front-end, não por e-mail (api#158). Revisão anual por equipamento é o
+      primeiro tipo exposto via API; outros tipos (OS parada, situação do equipamento) entram numa
+      issue futura.
 
 security:
   - bearerAuth: []
@@ -1136,7 +1138,8 @@ paths:
       description: >
         api#136 — disparados (mês 6 ou 11 desde a última manutenção preventiva concluída) e ainda
         sem "cliente contatado". Provisório: uma issue futura substitui por um GET /alerts
-        unificado, somando outros tipos de alerta hoje só por e-mail.
+        unificado, somando os outros tipos de alerta internos (OS parada, situação do
+        equipamento), hoje sem endpoint de leitura.
       operationId: listEquipmentRevisionAlerts
       responses:
         "200":

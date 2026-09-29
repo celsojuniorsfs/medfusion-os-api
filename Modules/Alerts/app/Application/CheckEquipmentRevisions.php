@@ -5,47 +5,42 @@ namespace Modules\Alerts\Application;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Modules\Alerts\Domain\Enums\RevisionMilestone;
-use Modules\Alerts\Infrastructure\Mail\EquipmentRevisionBillingMail;
-use Modules\Alerts\Infrastructure\Mail\EquipmentRevisionMail;
 use Modules\Alerts\Infrastructure\ReadModels\EquipmentRevisionAlert;
 
 /**
- * Chamada pelo comando agendado `alerts:check-equipment-revisions` (api#136), uma vez por dia —
- * sem fila (não roda worker em produção, ver docs/architecture.md). $eligibleCycles já vem
- * resolvido pelo Command (Presentation) — Application não importa o módulo Orders. Cada entrada é
- * o ciclo ATUAL do equipamento (última resolução de qualquer tipo, só entra aqui se ela for
- * `completed` + preventiva); um equipamento sem entrada aqui não tem ciclo elegível agora.
+ * Chamada pelo comando agendado `alerts:check-equipment-revisions` (api#136), uma vez por dia. O
+ * aviso é só pelo painel de alertas do front-end (api#158) — não manda e-mail. $eligibleCycles já
+ * vem resolvido pelo Command (Presentation) — Application não importa o módulo Orders. Cada
+ * entrada é o ciclo ATUAL do equipamento (última resolução de qualquer tipo, só entra aqui se ela
+ * for `completed` + preventiva); um equipamento sem entrada aqui não tem ciclo elegível agora.
  */
 class CheckEquipmentRevisions
 {
     /**
-     * @param  list<array{equipment_id: string, order_id: string, base_date: string, order_number: int, client_name: ?string}>  $eligibleCycles
-     * @param  list<string>  $recipientEmails  administrative + general_admin, avisos de mês 6/11
-     * @param  list<string>  $billingEmails  só general_admin, cobrança de 7 dias
-     * @return array{revisions_sent: int, billing_sent: int}
+     * @param  list<array{equipment_id: string, order_id: string, base_date: string}>  $eligibleCycles
+     * @return array{revisions_claimed: int, billing_claimed: int}
      */
-    public function __invoke(array $eligibleCycles, array $recipientEmails, array $billingEmails): array
+    public function __invoke(array $eligibleCycles): array
     {
         $cyclesByEquipmentId = collect($eligibleCycles)->keyBy('equipment_id');
 
         $this->supersedeStaleCycles($cyclesByEquipmentId);
 
-        $revisionsSent = 0;
+        $revisionsClaimed = 0;
 
         foreach ($eligibleCycles as $cycle) {
             try {
-                $revisionsSent += $this->checkCycle($cycle, $recipientEmails);
+                $revisionsClaimed += $this->checkCycle($cycle);
             } catch (\Throwable $exception) {
                 report($exception);
             }
         }
 
         return [
-            'revisions_sent' => $revisionsSent,
-            'billing_sent' => $this->checkBilling($billingEmails),
+            'revisions_claimed' => $revisionsClaimed,
+            'billing_claimed' => $this->checkBilling(),
         ];
     }
 
@@ -77,13 +72,12 @@ class CheckEquipmentRevisions
     }
 
     /**
-     * @param  array{equipment_id: string, order_id: string, base_date: string, order_number: int, client_name: ?string}  $cycle
-     * @param  list<string>  $recipientEmails
+     * @param  array{equipment_id: string, order_id: string, base_date: string}  $cycle
      */
-    private function checkCycle(array $cycle, array $recipientEmails): int
+    private function checkCycle(array $cycle): int
     {
         $baseDate = Carbon::parse($cycle['base_date']);
-        $sent = 0;
+        $claimed = 0;
 
         foreach (RevisionMilestone::cases() as $milestone) {
             $dueDate = $baseDate->copy()->addMonths($milestone->months());
@@ -92,19 +86,15 @@ class CheckEquipmentRevisions
                 continue;
             }
 
-            foreach ($recipientEmails as $email) {
-                Mail::to($email)->send(new EquipmentRevisionMail($cycle, $milestone, $dueDate));
-            }
-
-            $sent++;
+            $claimed++;
         }
 
-        return $sent;
+        return $claimed;
     }
 
     /**
-     * Grava a idempotência ANTES de mandar o e-mail — a constraint única
-     * (equipment_id, base_date, milestone) barra reenvio.
+     * Grava a idempotência — a constraint única (equipment_id, base_date, milestone) barra
+     * duplicata.
      *
      * @param  array{equipment_id: string, order_id: string}  $cycle
      */
@@ -127,55 +117,38 @@ class CheckEquipmentRevisions
         }
     }
 
-    /**
-     * @param  list<string>  $billingEmails
-     */
-    private function checkBilling(array $billingEmails): int
+    private function checkBilling(): int
     {
-        if ($billingEmails === []) {
-            return 0;
-        }
-
-        $sent = 0;
+        $claimed = 0;
 
         EquipmentRevisionAlert::query()
             ->whereNull('superseded_at')
             ->whereNull('client_contacted_at')
             ->whereNull('billing_notified_at')
             ->where('notified_at', '<=', now()->subDays(7))
-            ->chunkById(100, function (Collection $alerts) use ($billingEmails, &$sent) {
+            ->chunkById(100, function (Collection $alerts) use (&$claimed) {
                 foreach ($alerts as $alert) {
                     try {
-                        $sent += $this->claimBilling($alert, $billingEmails) ? 1 : 0;
+                        $claimed += $this->claimBilling($alert) ? 1 : 0;
                     } catch (\Throwable $exception) {
                         report($exception);
                     }
                 }
             });
 
-        return $sent;
+        return $claimed;
     }
 
     /**
-     * @param  list<string>  $billingEmails
+     * UPDATE condicional em vez de INSERT: a linha já existe, então a idempotência aqui é "só
+     * quem ainda está null grava" — barra duas execuções sobrepostas marcando a cobrança duas
+     * vezes, mesmo princípio da constraint única de claimRevision(). billing_notified_at marca
+     * "mais de 7 dias sem contato" pro front-end destacar — não dispara mais nada sozinho.
      */
-    private function claimBilling(EquipmentRevisionAlert $alert, array $billingEmails): bool
+    private function claimBilling(EquipmentRevisionAlert $alert): bool
     {
-        // UPDATE condicional em vez de INSERT: a linha já existe, então a idempotência aqui é
-        // "só quem ainda está null grava" — barra duas execuções sobrepostas mandando a cobrança
-        // duas vezes, mesmo princípio da constraint única de claimRevision().
-        $claimed = EquipmentRevisionAlert::whereKey($alert->id)
+        return EquipmentRevisionAlert::whereKey($alert->id)
             ->whereNull('billing_notified_at')
-            ->update(['billing_notified_at' => now()]);
-
-        if ($claimed === 0) {
-            return false;
-        }
-
-        foreach ($billingEmails as $email) {
-            Mail::to($email)->send(new EquipmentRevisionBillingMail($alert));
-        }
-
-        return true;
+            ->update(['billing_notified_at' => now()]) > 0;
     }
 }

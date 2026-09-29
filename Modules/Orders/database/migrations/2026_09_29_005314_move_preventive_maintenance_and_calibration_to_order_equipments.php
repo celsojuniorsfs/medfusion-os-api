@@ -9,6 +9,14 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
+     *
+     * orders.preventive_maintenance/calibration (api#134) NÃO são removidas aqui, mesmo saindo
+     * de uso na API — o OrderProjector continua escrevendo essas colunas a partir de
+     * OrderOpened/OrderUpdated só pra servir de fallback em onOrderEquipmentAttached() num
+     * `event-sourcing:replay`: eventos OrderEquipmentAttached gravados antes desta migration não
+     * carregam preventiveMaintenance/calibration (chega null no projector), e sem essa coluna
+     * ainda existindo em orders não haveria de onde recuperar o valor histórico verdadeiro — o
+     * backfill abaixo é só um atalho pra não esperar um replay completo em bancos já existentes.
      */
     public function up(): void
     {
@@ -30,10 +38,6 @@ return new class extends Migration
                     'calibration' => $order->calibration,
                 ]);
             });
-
-        Schema::table('orders', function (Blueprint $table) {
-            $table->dropColumn(['preventive_maintenance', 'calibration']);
-        });
     }
 
     /**
@@ -41,27 +45,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('orders', function (Blueprint $table) {
-            $table->boolean('preventive_maintenance')->default(false)->after('rental');
-            $table->boolean('calibration')->default(false)->after('preventive_maintenance');
-        });
-
-        // Backfill reverso: OS marcada como preventiva/calibração se QUALQUER equipamento dela
-        // tinha o campo — perde granularidade (esperado, é a direção errada da migração).
-        DB::table('order_equipments')
-            ->select('order_id')
-            ->where('preventive_maintenance', true)
-            ->distinct()
-            ->orderBy('order_id')
-            ->each(fn ($row) => DB::table('orders')->where('id', $row->order_id)->update(['preventive_maintenance' => true]));
-
-        DB::table('order_equipments')
-            ->select('order_id')
-            ->where('calibration', true)
-            ->distinct()
-            ->orderBy('order_id')
-            ->each(fn ($row) => DB::table('orders')->where('id', $row->order_id)->update(['calibration' => true]));
-
         Schema::table('order_equipments', function (Blueprint $table) {
             $table->dropColumn(['preventive_maintenance', 'calibration']);
         });

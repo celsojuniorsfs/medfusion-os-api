@@ -64,8 +64,8 @@ class OrderAggregate extends AggregateRoot
         ?string $serialNumber,
         ?string $assetTag,
         array $accessories,
-        bool $preventiveMaintenance = false,
-        bool $calibration = false,
+        ?bool $preventiveMaintenance = null,
+        ?bool $calibration = null,
     ): self {
         $this->recordThat(new OrderEquipmentAttached(
             $equipmentId, $name, $brand, $model, $serialNumber, $assetTag, $accessories, $orderEquipmentId,

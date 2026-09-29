@@ -10,6 +10,7 @@ use Modules\Clients\Domain\Enums\PersonType;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Orders\Domain\Enums\OrderStatus;
 use Modules\Orders\Domain\Events\OrderEquipmentAttached;
+use Modules\Orders\Domain\Events\OrderOpened;
 use Modules\Orders\Domain\Exceptions\InvalidOrderStatusTransition;
 use Modules\Orders\Domain\OrderAggregate;
 use Modules\Orders\Infrastructure\ReadModels\Order;
@@ -117,13 +118,61 @@ class OrdersAggregateTest extends TestCase
 
     /**
      * Um OrderEquipmentAttached gravado antes do api#146 não tem preventiveMaintenance/
-     * calibration no payload — o construtor precisa continuar desserializando com o default (ver
-     * CLAUDE.md § Acrescentar campo a um evento já gravado). Testado direto no evento, sem passar
-     * por replay de verdade: é o mesmo nível de garantia, mais barato de rodar.
+     * calibration no payload — o construtor precisa continuar desserializando (ver CLAUDE.md §
+     * Acrescentar campo a um evento já gravado). O default é `null`, não `false`: precisa
+     * continuar distinguível de um evento novo que passou `false` de propósito, senão
+     * OrderProjector::onOrderEquipmentAttached() não sabe quando cair pro valor legado da OS
+     * (ver teste de fallback abaixo). Testado direto no evento, sem passar por replay de
+     * verdade: é o mesmo nível de garantia, mais barato de rodar.
      */
-    public function test_order_equipment_attached_event_defaults_preventive_fields_when_absent_from_old_payload(): void
+    public function test_order_equipment_attached_event_defaults_preventive_fields_to_null_when_absent_from_old_payload(): void
     {
         $event = new OrderEquipmentAttached(null, 'Bisturi', null, null, null, null, []);
+
+        $this->assertNull($event->preventiveMaintenance);
+        $this->assertNull($event->calibration);
+    }
+
+    /**
+     * O cenário real que motivou o `?bool = null` acima: um OrderEquipmentAttached gravado antes
+     * da #146 (sem os campos novos) precisa, num `event-sourcing:replay`, recuperar o valor
+     * verdadeiro que só existe no OrderOpened/OrderUpdated da mesma OS (coluna vestigial em
+     * `orders`, nunca removida por causa disso) — não pode silenciosamente virar `false`.
+     */
+    public function test_equipment_attached_without_explicit_flags_falls_back_to_the_orders_legacy_value(): void
+    {
+        $orderUuid = (string) Str::uuid();
+
+        OrderAggregate::retrieve($orderUuid)
+            ->open(
+                1352, '2026-09-08', $this->aClientId(), $this->aUserId(), false, false, false, false, false,
+                null, null, null, null, null, null, null,
+                preventiveMaintenance: true, calibration: true,
+            )
+            // Sem preventiveMaintenance/calibration — mesmo formato de um evento gravado antes
+            // da #146 (chega null no projector).
+            ->attachEquipment((string) Str::uuid(), null, 'Monitor', null, null, null, null, [])
+            ->persist();
+
+        $equipment = Order::with('equipments')->findOrFail($orderUuid)->equipments->first();
+        $this->assertTrue((bool) $equipment->preventive_maintenance);
+        $this->assertTrue((bool) $equipment->calibration);
+    }
+
+    /**
+     * Um OrderOpened gravado antes do api#134 não tem preventiveMaintenance/calibration no
+     * payload — o construtor precisa continuar desserializando com o default `false` (ver
+     * CLAUDE.md § Acrescentar campo a um evento já gravado). Continua coberto separadamente do
+     * equivalente em OrderEquipmentAttached acima: são duas classes de evento distintas, cada
+     * uma com sua própria obrigação de desserializar payload antigo, e o default aqui é `false`
+     * de propósito (bem diferente do `null` de lá — ver comentário na classe do evento).
+     */
+    public function test_order_opened_event_defaults_preventive_fields_to_false_when_absent_from_old_payload(): void
+    {
+        $event = new OrderOpened(
+            1353, '2026-09-08', $this->aClientId(), $this->aUserId(), false, false, false, false, false,
+            null, null, null, null, null, null, null,
+        );
 
         $this->assertFalse($event->preventiveMaintenance);
         $this->assertFalse($event->calibration);

@@ -24,6 +24,11 @@ use Modules\Identity\Infrastructure\ReadModels\User;
     'payment_method', 'warranty_period', 'proposal_validity',
     'labor_cost', 'total', 'status', 'status_changed_at', 'certificate_number',
     'pdf_path', 'pdf_generated_at',
+    // Vestigiais desde a #146 (preventiva/calibração viraram por equipamento) — não expostos
+    // por OrderResource/OrderRequest, servem só de fallback em
+    // OrderProjector::onOrderEquipmentAttached() pra replay de equipamentos anexados antes
+    // desta mudança. Ver comentário lá.
+    'preventive_maintenance', 'calibration',
 ])]
 class Order extends Model
 {
@@ -46,6 +51,8 @@ class Order extends Model
             'total' => 'decimal:2',
             'status_changed_at' => 'datetime',
             'pdf_generated_at' => 'datetime',
+            'preventive_maintenance' => 'boolean',
+            'calibration' => 'boolean',
         ];
     }
 

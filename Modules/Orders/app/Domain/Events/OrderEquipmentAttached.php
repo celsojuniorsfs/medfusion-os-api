@@ -39,13 +39,16 @@ class OrderEquipmentAttached extends ShouldBeStored
         // `null` = "não sei" (projector cai pro valor legado da OS) — distinto de "sei que é false".
         public readonly ?bool $preventiveMaintenance = null,
         public readonly ?bool $calibration = null,
-        // api#140 — null = "sem situação anterior a preservar" (equipamento novo). Só vem
-        // preenchido quando UpdateOrder reanexa um equipamento que já existia. Projector usa o
-        // default (in_analysis) quando null; ao contrário de preventiveMaintenance/calibration
-        // acima, não há "situação legada" pra recuperar aqui.
+        // null = sem situação anterior a preservar (equipamento novo); só preenchido ao reanexar
+        // num UpdateOrder. Sem fallback pro projector, ao contrário de preventiveMaintenance
+        // acima — não existe "situação legada" (api#140).
         public readonly ?string $situation = null,
         public readonly ?string $situationChangedAt = null,
         public readonly ?string $completedAt = null,
+        // Mesmo padrão de situation acima, pro orçamento por equipamento (api#149).
+        public readonly ?string $approvalStatus = null,
+        public readonly ?string $approvalStatusChangedAt = null,
+        public readonly ?float $laborCost = null,
     ) {
         $this->accessories = OrderEquipmentAccessories::normalize($accessories);
     }

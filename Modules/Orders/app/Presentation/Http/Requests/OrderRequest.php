@@ -80,6 +80,13 @@ class OrderRequest extends FormRequest
             'equipments.*.accessories' => ['nullable', 'array'],
             'equipments.*.accessories.*.name' => ['required', 'string', 'max:255'],
             'equipments.*.accessories.*.quantity' => ['required', 'integer', 'min:1'],
+            // Mão de obra e peças por equipamento (api#149) — "items" no nível raiz (abaixo)
+            // continua existindo só pros itens gerais, sem vínculo com nenhum equipamento.
+            'equipments.*.labor_cost' => ['nullable', 'numeric', 'min:0'],
+            'equipments.*.items' => ['array'],
+            'equipments.*.items.*.quantity' => ['required', 'numeric', 'min:0.01'],
+            'equipments.*.items.*.description' => ['required', 'string', 'max:255'],
+            'equipments.*.items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
 
             // Pode vir vazio — peça é opcional, ver a regra cruzada em withValidator() abaixo.
             'items' => ['array'],
@@ -93,13 +100,21 @@ class OrderRequest extends FormRequest
      * A OS precisa mostrar pelo menos um valor — peças com preço e/ou mão de obra (ver
      * escopo-v1.md § Peças de reposição e mão de obra). Prefeitura costuma mandar só
      * labor_cost, com o valor da peça embutido; cliente particular costuma preencher as duas.
+     * Com mão de obra/peças por equipamento (api#149), um valor em QUALQUER lugar — geral ou de
+     * algum equipamento — já satisfaz; não precisa estar no nível raiz.
      */
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator) {
-            $hasLaborCost = filled($this->input('labor_cost'));
-            $hasPricedItem = collect($this->input('items', []))
-                ->contains(fn ($item) => filled($item['unit_price'] ?? null));
+            $equipments = collect($this->input('equipments', []));
+
+            $hasLaborCost = filled($this->input('labor_cost'))
+                || $equipments->contains(fn ($equipment) => filled($equipment['labor_cost'] ?? null));
+
+            $hasPricedItem = collect($this->input('items', []))->contains(fn ($item) => filled($item['unit_price'] ?? null))
+                || $equipments->contains(
+                    fn ($equipment) => collect($equipment['items'] ?? [])->contains(fn ($item) => filled($item['unit_price'] ?? null)),
+                );
 
             if (! $hasLaborCost && ! $hasPricedItem) {
                 $validator->errors()->add(

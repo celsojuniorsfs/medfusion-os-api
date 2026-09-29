@@ -2,8 +2,10 @@
 
 namespace Modules\Orders\Domain;
 
+use Modules\Orders\Domain\Enums\OrderEquipmentApprovalStatus;
 use Modules\Orders\Domain\Enums\OrderEquipmentSituation;
 use Modules\Orders\Domain\Enums\OrderStatus;
+use Modules\Orders\Domain\Events\OrderEquipmentApprovalStatusChanged;
 use Modules\Orders\Domain\Events\OrderEquipmentAttached;
 use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
 use Modules\Orders\Domain\Events\OrderEquipmentSituationChanged;
@@ -68,17 +70,28 @@ class OrderAggregate extends AggregateRoot
         array $accessories,
         ?bool $preventiveMaintenance = null,
         ?bool $calibration = null,
-        // api#140 — preenchidos só quando UpdateOrder está reanexando um equipamento que já
-        // existia (pra sobreviver à edição, ver OrderController::resolveEquipments()); null pra
-        // equipamento novo, mesmo default do evento (ver comentário lá).
         ?string $situation = null,
         ?string $situationChangedAt = null,
         ?string $completedAt = null,
+        ?string $approvalStatus = null,
+        ?string $approvalStatusChangedAt = null,
+        ?float $laborCost = null,
     ): self {
         $this->recordThat(new OrderEquipmentAttached(
             $equipmentId, $name, $brand, $model, $serialNumber, $assetTag, $accessories, $orderEquipmentId,
             $preventiveMaintenance, $calibration, $situation, $situationChangedAt, $completedAt,
+            $approvalStatus, $approvalStatusChangedAt, $laborCost,
         ));
+
+        return $this;
+    }
+
+    public function changeEquipmentApprovalStatus(
+        string $orderEquipmentId,
+        ?OrderEquipmentApprovalStatus $from,
+        OrderEquipmentApprovalStatus $to,
+    ): self {
+        $this->recordThat(new OrderEquipmentApprovalStatusChanged($orderEquipmentId, $from?->value, $to->value));
 
         return $this;
     }
@@ -100,9 +113,9 @@ class OrderAggregate extends AggregateRoot
         return $this;
     }
 
-    public function addItem(float $quantity, string $description, ?float $unitPrice): self
+    public function addItem(float $quantity, string $description, ?float $unitPrice, ?string $orderEquipmentId = null): self
     {
-        $this->recordThat(new OrderItemAdded($quantity, $description, $unitPrice));
+        $this->recordThat(new OrderItemAdded($quantity, $description, $unitPrice, $orderEquipmentId));
 
         return $this;
     }
@@ -161,9 +174,12 @@ class OrderAggregate extends AggregateRoot
         return $this;
     }
 
-    public function recordPdfGenerated(string $path, string $generatedAt): self
+    /**
+     * @param  ?list<string>  $orderEquipmentIds  api#149 — null = orçamento da OS inteira.
+     */
+    public function recordPdfGenerated(string $path, string $generatedAt, ?array $orderEquipmentIds = null): self
     {
-        $this->recordThat(new OrderPdfGenerated($path, $generatedAt));
+        $this->recordThat(new OrderPdfGenerated($path, $generatedAt, $orderEquipmentIds));
 
         return $this;
     }
@@ -202,6 +218,8 @@ class OrderAggregate extends AggregateRoot
     protected function applyOrderEquipmentAttached(OrderEquipmentAttached $event): void {}
 
     protected function applyOrderEquipmentSituationChanged(OrderEquipmentSituationChanged $event): void {}
+
+    protected function applyOrderEquipmentApprovalStatusChanged(OrderEquipmentApprovalStatusChanged $event): void {}
 
     protected function applyOrderItemAdded(OrderItemAdded $event): void {}
 

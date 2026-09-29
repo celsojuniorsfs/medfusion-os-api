@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Modules\Orders\Domain\Enums\OrderEquipmentSituation;
+use Modules\Orders\Domain\Events\OrderEquipmentApprovalStatusChanged;
 use Modules\Orders\Domain\Events\OrderEquipmentAttached;
 use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
 use Modules\Orders\Domain\Events\OrderEquipmentSituationChanged;
@@ -20,10 +21,15 @@ use Modules\Orders\Infrastructure\ReadModels\Order;
 use Modules\Orders\Infrastructure\ReadModels\OrderEquipment;
 use Modules\Orders\Infrastructure\ReadModels\OrderEquipmentAccessory;
 use Modules\Orders\Infrastructure\ReadModels\OrderItem;
+use Modules\Orders\Infrastructure\ReadModels\OrderPdf;
+use Modules\Orders\Infrastructure\ReadModels\OrderPdfEquipment;
 use Spatie\EventSourcing\EventHandlers\Projectors\Projector;
 
 class OrderProjector extends Projector
 {
+    /** @var array<string, true> */
+    private array $pendingTotalRecalculations = [];
+
     public function onOrderOpened(OrderOpened $event): void
     {
         Order::create([
@@ -96,6 +102,9 @@ class OrderProjector extends Projector
             'situation_changed_at' => $event->situationChangedAt ?? $event->createdAt(),
             'completed_at' => $event->completedAt,
             'position' => $position,
+            'approval_status' => $event->approvalStatus,
+            'approval_status_changed_at' => $event->approvalStatusChangedAt,
+            'labor_cost' => $event->laborCost,
         ]);
 
         foreach ($event->accessories as $position => $accessory) {
@@ -105,6 +114,8 @@ class OrderProjector extends Projector
                 'position' => $position,
             ]);
         }
+
+        $this->scheduleTotalRecalculation($order->id);
 
         $this->forgetCache();
     }
@@ -126,21 +137,29 @@ class OrderProjector extends Projector
         $this->forgetCache();
     }
 
+    public function onOrderEquipmentApprovalStatusChanged(OrderEquipmentApprovalStatusChanged $event): void
+    {
+        OrderEquipment::whereKey($event->orderEquipmentId)->update([
+            'approval_status' => $event->to,
+            'approval_status_changed_at' => $event->createdAt(),
+        ]);
+
+        $this->forgetCache();
+    }
+
     public function onOrderItemAdded(OrderItemAdded $event): void
     {
         $order = Order::findOrFail($event->aggregateRootUuid());
 
         OrderItem::create([
             'order_id' => $order->id,
+            'order_equipment_id' => $event->orderEquipmentId,
             'quantity' => $event->quantity,
             'description' => $event->description,
             'unit_price' => $event->unitPrice,
         ]);
 
-        // total = mão de obra + soma dos itens (unit_price é opcional). Recalculado aqui para
-        // não duplicar a regra entre create e update.
-        $itemsTotal = $order->items()->selectRaw('COALESCE(SUM(quantity * unit_price), 0) as total')->value('total');
-        $order->update(['total' => ($order->labor_cost ?? 0) + $itemsTotal]);
+        $this->scheduleTotalRecalculation($order->id);
 
         $this->forgetCache();
     }
@@ -174,14 +193,13 @@ class OrderProjector extends Projector
 
     /**
      * PUT /orders/{id} — disparado antes de OrderEquipmentsCleared/OrderItemsCleared (ver
-     * UpdateOrder), então o total aqui já reflete o labor_cost novo; addItem() posteriores
-     * incrementam a partir dele.
+     * UpdateOrder). O total recalculado aqui ainda soma os equipamentos/itens ANTIGOS (só somem
+     * no evento seguinte) — transitório e invisível fora desta requisição: attachEquipmentsAndItems()
+     * reanexa tudo em seguida, dentro da mesma transação, recalculando de novo a cada equipamento/item.
      */
     public function onOrderUpdated(OrderUpdated $event): void
     {
         $order = Order::findOrFail($event->aggregateRootUuid());
-
-        $itemsTotal = $order->items()->selectRaw('COALESCE(SUM(quantity * unit_price), 0) as total')->value('total');
 
         $order->update([
             'number' => $event->number,
@@ -199,21 +217,50 @@ class OrderProjector extends Projector
             'warranty_period' => $event->warrantyPeriod,
             'proposal_validity' => $event->proposalValidity,
             'labor_cost' => $event->laborCost,
-            'total' => ($event->laborCost ?? 0) + $itemsTotal,
             // Vestigiais desde a #146 — mesmo motivo do onOrderOpened() acima.
             'preventive_maintenance' => $event->preventiveMaintenance,
             'calibration' => $event->calibration,
         ]);
+
+        $this->scheduleTotalRecalculation($order->id);
 
         $this->forgetCache();
     }
 
     public function onOrderPdfGenerated(OrderPdfGenerated $event): void
     {
-        Order::whereKey($event->aggregateRootUuid())->update([
+        $orderId = $event->aggregateRootUuid();
+
+        Order::whereKey($orderId)->update([
             'pdf_path' => $event->path,
             'pdf_generated_at' => $event->generatedAt,
         ]);
+
+        $orderPdf = OrderPdf::create([
+            'order_id' => $orderId,
+            'path' => $event->path,
+            'generated_at' => $event->generatedAt,
+        ]);
+
+        // Lê order_equipments AO VIVO — seguro mesmo num replay, porque os eventos reprocessam em
+        // ordem cronológica: um OrderEquipmentsCleared/reattach posterior só roda DEPOIS deste
+        // evento. null = orçamento da OS inteira.
+        $equipmentsQuery = OrderEquipment::where('order_id', $orderId);
+
+        if ($event->orderEquipmentIds !== null) {
+            $equipmentsQuery->whereIn('id', $event->orderEquipmentIds);
+        }
+
+        foreach ($equipmentsQuery->get(['id', 'equipment_id', 'name', 'position']) as $equipment) {
+            OrderPdfEquipment::create([
+                'order_pdf_id' => $orderPdf->id,
+                'equipment_id' => $equipment->equipment_id,
+                'name' => $equipment->name,
+                'position' => $equipment->position,
+            ]);
+        }
+
+        $this->forgetCache();
     }
 
     public function onOrderEquipmentsCleared(OrderEquipmentsCleared $event): void
@@ -229,9 +276,43 @@ class OrderProjector extends Projector
 
         OrderItem::where('order_id', $order->id)->delete();
 
-        $order->update(['total' => $order->labor_cost ?? 0]);
+        $this->scheduleTotalRecalculation($order->id);
 
         $this->forgetCache();
+    }
+
+    /**
+     * total = mão de obra geral (`orders.labor_cost`) + mão de obra de cada equipamento
+     * (`order_equipments.labor_cost`, api#149) + soma de todos os itens, gerais ou de
+     * equipamento (`unit_price` é opcional). Centralizado aqui pra não duplicar a fórmula nos
+     * quatro pontos que mexem em algum desses três componentes.
+     */
+    private function recalculateTotal(Order $order): void
+    {
+        $itemsTotal = $order->items()->selectRaw('COALESCE(SUM(quantity * unit_price), 0) as total')->value('total');
+        $equipmentsLaborTotal = $order->equipments()->selectRaw('COALESCE(SUM(labor_cost), 0) as total')->value('total');
+
+        $order->update(['total' => ($order->labor_cost ?? 0) + $equipmentsLaborTotal + $itemsTotal]);
+    }
+
+    /**
+     * Uma OS pode anexar dezenas de equipamentos/itens num único request (lote de prefeitura) —
+     * cada anexação dispararia seu próprio recalculateTotal (2 SUM + 1 UPDATE) se chamado direto.
+     * Mesmo idioma do forgetCache(): agenda pro afterCommit e deduplica por id, então só o último
+     * estado importa e o recálculo roda no máximo uma vez por OS por transação.
+     */
+    private function scheduleTotalRecalculation(string $orderId): void
+    {
+        if (isset($this->pendingTotalRecalculations[$orderId])) {
+            return;
+        }
+
+        $this->pendingTotalRecalculations[$orderId] = true;
+
+        DB::afterCommit(function () use ($orderId) {
+            unset($this->pendingTotalRecalculations[$orderId]);
+            $this->recalculateTotal(Order::findOrFail($orderId));
+        });
     }
 
     /**
@@ -274,8 +355,17 @@ class OrderProjector extends Projector
                 ),
             )->delete();
 
+            OrderPdfEquipment::when(
+                $aggregateUuid !== null,
+                fn ($query) => $query->whereIn(
+                    'order_pdf_id',
+                    OrderPdf::select('id')->where('order_id', $aggregateUuid),
+                ),
+            )->delete();
+
             OrderItem::when($aggregateUuid !== null, fn ($query) => $query->where('order_id', $aggregateUuid))->delete();
             OrderEquipment::when($aggregateUuid !== null, fn ($query) => $query->where('order_id', $aggregateUuid))->delete();
+            OrderPdf::when($aggregateUuid !== null, fn ($query) => $query->where('order_id', $aggregateUuid))->delete();
             Order::when($aggregateUuid !== null, fn ($query) => $query->whereKey($aggregateUuid))->delete();
         });
 

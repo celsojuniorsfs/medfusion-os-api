@@ -11,7 +11,10 @@ use Modules\Orders\Infrastructure\ReadModels\Order;
 
 class ChangeOrderStatus
 {
-    public function __construct(private readonly DeriveOrderStatusFromEquipments $deriveOrderStatus) {}
+    public function __construct(
+        private readonly DeriveOrderStatusFromEquipments $deriveOrderStatus,
+        private readonly DeriveOrderStatusFromApprovals $deriveOrderStatusFromApprovals,
+    ) {}
 
     /**
      * @throws InvalidOrderStatusTransition
@@ -47,6 +50,11 @@ class ChangeOrderStatus
         // propósito, e derivar aqui devolveria a OS sozinha antes do segundo passo.
         if ($to === OrderStatus::Approved) {
             $this->deriveOrderStatus->__invoke($orderId);
+        }
+
+        // Mesmo raciocínio acima, pro orçamento por equipamento (api#149).
+        if ($to === OrderStatus::AwaitingApproval) {
+            $this->deriveOrderStatusFromApprovals->__invoke($orderId);
         }
 
         return Order::findOrFail($orderId);

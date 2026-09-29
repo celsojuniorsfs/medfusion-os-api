@@ -5,6 +5,7 @@ namespace Modules\Orders\Presentation\Http\Resources;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Modules\Orders\Infrastructure\ReadModels\OrderEquipmentAccessory;
+use Modules\Orders\Infrastructure\ReadModels\OrderItem;
 
 /**
  * Schema OrderEquipmentSnapshot do openapi.yaml — o retrato do equipamento no momento em que a
@@ -34,6 +35,18 @@ class OrderEquipmentResource extends JsonResource
             'situation_changed_at' => $this->situation_changed_at?->toISOString(),
             'completed_at' => $this->completed_at?->toISOString(),
             'position' => $this->position,
+            // approval_status/labor_cost/items (api#149) — orçamento por equipamento, null em
+            // approval_status = nenhum orçamento gerado ainda pra este equipamento.
+            'approval_status' => $this->approval_status,
+            'approval_status_changed_at' => $this->approval_status_changed_at?->toISOString(),
+            'labor_cost' => $this->labor_cost,
+            'items' => $this->items
+                ->map(fn (OrderItem $item) => [
+                    'quantity' => $item->quantity,
+                    'description' => $item->description,
+                    'unit_price' => $item->unit_price,
+                ])
+                ->all(),
             'accessories' => $this->accessories
                 ->map(fn (OrderEquipmentAccessory $accessory) => [
                     'name' => $accessory->name,

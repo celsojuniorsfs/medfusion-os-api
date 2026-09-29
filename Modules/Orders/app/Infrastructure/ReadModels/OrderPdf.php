@@ -7,9 +7,15 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['order_id', 'order_equipment_id', 'quantity', 'description', 'unit_price'])]
-class OrderItem extends Model
+/**
+ * Histórico de orçamentos gerados (api#149) — um por chamada de `POST /orders/{id}/pdf`, nunca
+ * sobrescrito. `orders.pdf_path`/`pdf_generated_at` continuam existindo à parte, como ponteiro
+ * pro mais recente.
+ */
+#[Fillable(['id', 'order_id', 'path', 'generated_at'])]
+class OrderPdf extends Model
 {
     use HasFactory, HasUuids;
 
@@ -20,8 +26,7 @@ class OrderItem extends Model
     protected function casts(): array
     {
         return [
-            'quantity' => 'decimal:2',
-            'unit_price' => 'decimal:2',
+            'generated_at' => 'datetime',
         ];
     }
 
@@ -34,10 +39,10 @@ class OrderItem extends Model
     }
 
     /**
-     * @return BelongsTo<OrderEquipment, $this>
+     * @return HasMany<OrderPdfEquipment, $this>
      */
-    public function orderEquipment(): BelongsTo
+    public function equipments(): HasMany
     {
-        return $this->belongsTo(OrderEquipment::class);
+        return $this->hasMany(OrderPdfEquipment::class)->orderBy('position');
     }
 }

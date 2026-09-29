@@ -108,7 +108,7 @@ parênteses.
 | `in_analysis` | `external_quote` (orçamento externo) | enviado a terceiro para avaliação (opcional) |
 | `external_quote` | `in_analysis` ou `awaiting_approval` | retorno do terceiro |
 | `in_analysis` | `awaiting_approval` (aguardando aprovação) | orçamento pronto, enviado ao cliente |
-| `awaiting_approval` | `approved` (aprovada) | cliente aceitou |
+| `awaiting_approval` | `approved` (aprovada) | cliente aceitou (manual) OU o primeiro equipamento é aprovado (automático, api#149) — os dois caminhos convivem |
 | `awaiting_approval` | `not_approved` (não aprovado) | orçamento ficou sem retorno do cliente por tempo suficiente — mudança manual do técnico, sem prazo automático |
 | `approved` | `completed` (concluída) | todos os equipamentos concluídos/devolvidos sem reparo (api#140) |
 | `approved` | `partially_completed` (parcialmente concluída) | pelo menos um equipamento resolvido, outros ainda pendentes — **automático** |
@@ -143,6 +143,27 @@ mesmo desenho de `orders:check-stalled`, mas com escada fixa e comando separado 
 `OrderEquipmentSituation::alertMilestoneDays()`); `completed`/`returned_unrepaired` não alertam, e
 o alerta continua mesmo com a OS `partially_completed`/`warranty_repair` (só some quando a OS
 chega num status final: `canceled`, `not_approved` ou `completed`).
+
+### Orçamento por equipamento (api#149)
+
+Cada equipamento tem seu próprio orçamento, independente do da OS: `approval_status`
+(`order_equipments`) nasce `null` (nenhum orçamento gerado ainda) e vira `awaiting_approval`
+sozinho no primeiro `POST /orders/{id}/pdf` que o inclui — antes disso,
+`PATCH /orders/{id}/equipments/approval` recusa com `422` (não dá pra aprovar/reprovar um
+orçamento inexistente). Sem máquina de estados, igual à situação técnica.
+
+A OS deriva pra `approved` sozinha quando o primeiro equipamento é aprovado, mas só se o status
+atual já for `awaiting_approval` — reprovar (`not_approved`) um equipamento não muda o status da
+OS, é só informativo. Essa derivação **convive** com a aprovação manual da OS inteira (que
+continua existindo, sem equipamento nenhum precisar de orçamento próprio) — nenhuma das duas
+bloqueia a outra.
+
+Peças (`order_items`) e mão de obra (`order_equipments.labor_cost`) também passam a poder ser por
+equipamento — os itens/mão de obra sem vínculo continuam existindo, como "gerais" da OS (ex.:
+taxa de visita). `POST /orders/{id}/pdf` aceita uma lista opcional de `order_equipment_ids`: soma
+só os equipamentos escolhidos + os gerais. Cada PDF gerado fica no histórico
+(`GET /orders/{id}/pdf/history`) — nenhum é apagado, ao contrário do comportamento anterior à
+#149 (`orders.pdf_path` continua apontando só pro mais recente).
 
 `not_approved` existe separado de `canceled` porque, na prática, são causas diferentes: um
 orçamento pode ficar meses sem resposta do cliente (o caso de `not_approved`, que a empresa quer
@@ -380,6 +401,10 @@ português — ex.: `reported_defect` guarda o texto "Equipamento sem funções 
 | Situação (do equipamento na OS) | `situation` | `order_equipments` |
 | Posição (letra do certificado, api#61) | `position` | `order_equipments` |
 | Data de conclusão (do equipamento) | `completed_at` | `order_equipments` |
+| Status do orçamento (do equipamento, api#149) | `approval_status` | `order_equipments` |
+| Valor da mão de obra (do equipamento, api#149) | `labor_cost` | `order_equipments` |
 | Quantidade | `quantity` | `order_items` |
 | Descrição | `description` | `order_items` |
 | Valor unitário | `unit_price` | `order_items` |
+| Caminho do arquivo (do orçamento no histórico, api#149) | `path` | `order_pdfs` |
+| Gerado em | `generated_at` | `order_pdfs`, `order_pdf_equipments` (via `order_pdfs`) |

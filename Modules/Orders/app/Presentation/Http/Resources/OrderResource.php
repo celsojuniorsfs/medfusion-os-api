@@ -43,7 +43,9 @@ class OrderResource extends JsonResource
             'certificate_number' => $this->certificate_number,
             'pdf_generated_at' => $this->pdf_generated_at,
             'equipments' => OrderEquipmentResource::collection($this->whenLoaded('equipments')),
-            'items' => OrderItemResource::collection($this->whenLoaded('items')),
+            // Só os itens gerais (sem equipamento, api#149) — os demais vêm dentro de cada
+            // OrderEquipmentResource.
+            'items' => OrderItemResource::collection($this->whenLoaded('items', fn () => $this->items->whereNull('order_equipment_id'))),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

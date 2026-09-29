@@ -20,6 +20,7 @@ use Modules\Identity\Domain\UserAggregate;
 use Modules\Orders\Application\AddOrderItem;
 use Modules\Orders\Application\AttachEquipmentToOrder;
 use Modules\Orders\Application\OpenOrder;
+use Modules\Orders\Application\RecordOrderPdf;
 use Modules\Orders\Domain\Enums\OrderStatus;
 use Modules\Orders\Domain\OrderAggregate;
 use Modules\Orders\Infrastructure\Projectors\OrderProjector;
@@ -212,6 +213,33 @@ class EventReplayTest extends TestCase
         $positions = DB::table('order_equipments')->where('order_id', $order->id)->pluck('position', 'equipment_id');
         $this->assertSame(0, $positions[$first]);
         $this->assertSame(1, $positions[$second]);
+    }
+
+    /**
+     * api#149 — order_pdf_equipments é reconstruído a partir do order_equipments AO VIVO no
+     * momento em que OrderPdfGenerated é reprocessado (ver OrderProjector); confere que isso
+     * sobrevive a um replay completo, não só à execução original.
+     */
+    public function test_replaying_reconstructs_order_pdf_history(): void
+    {
+        $clientId = $this->aClientId();
+        $equipmentId = $this->anEquipmentId($clientId);
+        $order = $this->anOrderWithEquipment($clientId, $this->aUserId(), $equipmentId);
+        $orderEquipmentId = DB::table('order_equipments')->where('order_id', $order->id)->value('id');
+
+        app(RecordOrderPdf::class)($order->id, 'orders/fake.pdf', now()->toIso8601String(), [$orderEquipmentId]);
+
+        $this->artisan('event-sourcing:replay', ['--force' => true])->assertSuccessful();
+
+        $this->assertDatabaseHas('order_pdfs', ['order_id' => $order->id, 'path' => 'orders/fake.pdf']);
+        $this->assertSame(
+            1,
+            DB::table('order_pdf_equipments')
+                ->join('order_pdfs', 'order_pdfs.id', '=', 'order_pdf_equipments.order_pdf_id')
+                ->where('order_pdfs.order_id', $order->id)
+                ->where('order_pdf_equipments.name', 'Bisturi')
+                ->count(),
+        );
     }
 
     /**

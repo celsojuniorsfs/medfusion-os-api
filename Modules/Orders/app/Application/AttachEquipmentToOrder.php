@@ -26,18 +26,23 @@ class AttachEquipmentToOrder
         array $accessories = [],
         bool $preventiveMaintenance = false,
         bool $calibration = false,
-        // api#140 — repassados quando UpdateOrder está reanexando um equipamento existente, pra
-        // sobreviver à edição (ver OrderController::resolveEquipments()).
         ?string $situation = null,
         ?string $situationChangedAt = null,
         ?string $completedAt = null,
+        ?string $approvalStatus = null,
+        ?string $approvalStatusChangedAt = null,
+        ?float $laborCost = null,
+        // Deixa o chamador escolher o id (OrderController precisa dele de antemão pra anexar os
+        // itens do equipamento em seguida) — sem isso, continua sendo gerado aqui embaixo.
+        ?string $orderEquipmentId = null,
     ): Order {
-        $orderEquipmentId = (string) Str::uuid();
+        $orderEquipmentId ??= (string) Str::uuid();
 
         OrderAggregate::retrieve($orderId)
             ->attachEquipment(
                 $orderEquipmentId, $equipmentId, $name, $brand, $model, $serialNumber, $assetTag, $accessories,
                 $preventiveMaintenance, $calibration, $situation, $situationChangedAt, $completedAt,
+                $approvalStatus, $approvalStatusChangedAt, $laborCost,
             )
             ->persist();
 

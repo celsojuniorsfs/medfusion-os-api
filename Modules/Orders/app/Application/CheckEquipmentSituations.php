@@ -41,7 +41,10 @@ class CheckEquipmentSituations
         $sent = 0;
 
         OrderEquipment::query()
-            ->with('order')
+            // order.client (achado em code review): a view do e-mail acessa $order->client->name
+            // — sem eager-load, isso vira uma consulta a mais por equipamento alertado, uma vez
+            // por dia (mesmo cuidado que CheckStalledOrders já tem no ->with('client') dele).
+            ->with('order.client')
             ->whereIn('situation', $alertableSituations)
             // Só equipamento de OS que ainda não chegou num status final (S5) — cancelada/não
             // aprovada/concluída. `partially_completed` e `warranty_repair` continuam alertando de

@@ -14,10 +14,10 @@
   `laravel.test` (nome padrão do Sail) para `app` em 14/09/2026 — só o nome no Compose muda, a
   imagem continua `sail-8.4/app`.
 - Mailpit, um worker de fila dedicado e o Adminer ficam atrás do profile `extra`
-  (`docker compose --profile extra up -d`). Desde o api#135 (alerta de OS parada) o Mailpit tem
-  uso real — é onde os e-mails de `orders:check-stalled` aparecem em dev — mas continuam fora do
-  padrão porque a fila em si segue sem uso (envio é síncrono, ver `docs/architecture.md`) e a
-  notificação automática da OS pro cliente final (api#65) ainda não está implementada.
+  (`docker compose --profile extra up -d`) — sem uso real ainda: os alertas internos (api#135,
+  #147, #136) pararam de mandar e-mail (api#158, painel de alertas no front-end no lugar), a fila
+  em si segue sem uso (envio é síncrono, ver `docs/architecture.md`), e a notificação automática
+  da OS pro cliente final (api#65) ainda não está implementada.
 - `.env` a partir de [`.env.example`](../.env.example) (versionado nesta issue).
 - Frontend: `ng serve`, `environment.ts` apontando `apiUrl: 'http://localhost:8000/api/v1'` —
   roda fora do Docker, sem mudança.

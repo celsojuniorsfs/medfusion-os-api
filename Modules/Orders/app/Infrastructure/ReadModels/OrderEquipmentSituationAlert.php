@@ -9,9 +9,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * Rastro de idempotência do comando `orders:check-equipment-situations` (api#147) — não é
- * projeção de evento, só "esse marco já foi avisado".
+ * projeção de evento, só "esse marco já foi avisado". Chaveado por order_id + equipment_id
+ * (catálogo), não order_equipment_id — esse é efêmero, troca a cada edição da OS.
  */
-#[Fillable(['id', 'order_equipment_id', 'situation', 'situation_changed_at', 'milestone_days', 'notified_at'])]
+#[Fillable(['id', 'order_id', 'equipment_id', 'situation', 'situation_changed_at', 'milestone_days', 'notified_at'])]
 class OrderEquipmentSituationAlert extends Model
 {
     use HasUuids;
@@ -31,10 +32,10 @@ class OrderEquipmentSituationAlert extends Model
     }
 
     /**
-     * @return BelongsTo<OrderEquipment, $this>
+     * @return BelongsTo<Order, $this>
      */
-    public function orderEquipment(): BelongsTo
+    public function order(): BelongsTo
     {
-        return $this->belongsTo(OrderEquipment::class);
+        return $this->belongsTo(Order::class);
     }
 }

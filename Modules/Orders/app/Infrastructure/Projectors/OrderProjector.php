@@ -47,6 +47,11 @@ class OrderProjector extends Projector
             // createdAt() do evento, não now() — senão um event-sourcing:replay reescreveria
             // toda OS com a hora do replay, e não da abertura de verdade (api#135).
             'status_changed_at' => $event->createdAt(),
+            // Vestigiais desde a #146 (preventiva/calibração viraram por equipamento) — a
+            // coluna continua existindo e sendo escrita só pra servir de fallback em
+            // onOrderEquipmentAttached() abaixo, pra OS's abertas antes da #146, cujo
+            // OrderEquipmentAttached não carrega esse valor. Nunca exposta pela API (sumiu de
+            // OrderResource/OrderRequest na #146).
             'preventive_maintenance' => $event->preventiveMaintenance,
             'calibration' => $event->calibration,
         ]);
@@ -56,6 +61,15 @@ class OrderProjector extends Projector
 
     public function onOrderEquipmentAttached(OrderEquipmentAttached $event): void
     {
+        // null aqui = evento gravado antes da #146, que não carrega esses campos — cai pro
+        // valor legado da OS (coluna vestigial em orders, ver onOrderOpened()/onOrderUpdated()
+        // acima), que já foi projetado antes deste evento na mesma sequência do stream (open/
+        // update sempre precede attachEquipment na mesma OS). Sem esse fallback, um
+        // `event-sourcing:replay` zeraria silenciosamente a marcação de todo equipamento
+        // anexado antes desta mudança — a OS::findOrFail() é segura aqui porque OrderOpened
+        // já criou a linha antes de qualquer OrderEquipmentAttached do mesmo agregado rodar.
+        $order = Order::findOrFail($event->aggregateRootUuid());
+
         $orderEquipment = OrderEquipment::create([
             // null só em eventos gravados antes de orderEquipmentId existir (replay não-determinístico
             // pra esses casos específicos, igual já era antes desta mudança).
@@ -67,6 +81,8 @@ class OrderProjector extends Projector
             'model' => $event->model,
             'serial_number' => $event->serialNumber,
             'asset_tag' => $event->assetTag,
+            'preventive_maintenance' => $event->preventiveMaintenance ?? $order->preventive_maintenance,
+            'calibration' => $event->calibration ?? $order->calibration,
         ]);
 
         foreach ($event->accessories as $position => $accessory) {
@@ -140,6 +156,7 @@ class OrderProjector extends Projector
             'proposal_validity' => $event->proposalValidity,
             'labor_cost' => $event->laborCost,
             'total' => ($event->laborCost ?? 0) + $itemsTotal,
+            // Vestigiais desde a #146 — mesmo motivo do onOrderOpened() acima.
             'preventive_maintenance' => $event->preventiveMaintenance,
             'calibration' => $event->calibration,
         ]);

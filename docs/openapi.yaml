@@ -1347,6 +1347,10 @@ components:
         que desde o api#112 exige `equipment_model_id`/`no_accessories`/acessórios estruturados —
         um payload que `POST /orders` nunca aceitou. O contrato tinha ficado pra trás depois dessa
         mudança no catálogo.
+
+        `preventive_maintenance`/`calibration` (api#146) valem nos dois ramos, pelo mesmo motivo
+        de `accessories` — corrigido do nível de OS (api#134) pro de equipamento, porque nem todo
+        equipamento tem calibração.
       # Sem os `not`, um payload com equipment_id E name ao mesmo tempo batia nos dois ramos
       # (nenhum dos dois usa additionalProperties:false, então a chave do OUTRO ramo é só
       # "propriedade extra permitida") — um validador de contrato estrito rejeitava algo que a API
@@ -1358,6 +1362,8 @@ components:
           not: { required: [name] }
           properties:
             equipment_id: { type: string, format: uuid }
+            preventive_maintenance: { type: boolean, default: false }
+            calibration: { type: boolean, default: false }
             accessories:
               type: array
               items: { $ref: "#/components/schemas/OrderEquipmentAccessory" }
@@ -1370,6 +1376,8 @@ components:
             model: { type: ["string", "null"], maxLength: 255 }
             serial_number: { type: ["string", "null"], maxLength: 255 }
             asset_tag: { type: ["string", "null"], maxLength: 255 }
+            preventive_maintenance: { type: boolean, default: false }
+            calibration: { type: boolean, default: false }
             accessories:
               type: array
               items: { $ref: "#/components/schemas/OrderEquipmentAccessory" }
@@ -1389,6 +1397,16 @@ components:
         model: { type: ["string", "null"] }
         serial_number: { type: ["string", "null"] }
         asset_tag: { type: ["string", "null"] }
+        preventive_maintenance:
+          {
+            type: boolean,
+            description: "Alimenta a contagem de 12 meses até a próxima revisão (api#136)",
+          }
+        calibration:
+          {
+            type: boolean,
+            description: "Manutenção distinta da preventiva, mas sem vencimento próprio: sempre sai na mesma data/mesma OS",
+          }
         accessories:
           type: array
           description: Sempre presente, mesmo vazia ([]).
@@ -1438,16 +1456,6 @@ components:
           { type: boolean, description: "Treinamento técnico" }
         on_site_quote: { type: boolean, description: "Orç. local" }
         rental: { type: boolean, description: "Locação" }
-        preventive_maintenance:
-          {
-            type: boolean,
-            description: "Preventiva — alimenta a contagem de 12 meses até a próxima revisão (medfusion-os-api#136). Por OS, aplica a todos os equipamentos dela (limitação conhecida, ver #134)",
-          }
-        calibration:
-          {
-            type: boolean,
-            description: "Calibração — manutenção distinta da preventiva, mas sem vencimento próprio: sempre sai na mesma data/mesma OS",
-          }
         reported_defect:
           { type: ["string", "null"], description: "Defeito apresentado" }
         maintenance_plan:
@@ -1499,8 +1507,6 @@ components:
         technical_training: { type: boolean, default: false }
         on_site_quote: { type: boolean, default: false }
         rental: { type: boolean, default: false }
-        preventive_maintenance: { type: boolean, default: false }
-        calibration: { type: boolean, default: false }
         reported_defect: { type: ["string", "null"] }
         maintenance_plan: { type: ["string", "null"] }
         notes: { type: ["string", "null"] }

@@ -39,6 +39,14 @@ class OrderEquipmentAttached extends ShouldBeStored
         public readonly ?string $assetTag,
         string|array|null $accessories = [],
         public readonly ?string $orderEquipmentId = null,
+        // Por último e nullable, não `bool = false` (api#146) — eventos gravados antes disso não
+        // têm essas chaves, e aqui `null` precisa continuar significando "não sei" (o projector
+        // cai pro valor legado da OS, ver OrderProjector::onOrderEquipmentAttached), distinto de
+        // "sei que é false" num evento novo. Com `bool = false` os dois casos ficariam idênticos
+        // e um `event-sourcing:replay` perderia a marcação de todo equipamento anexado antes desta
+        // mudança (CLAUDE.md § Acrescentar campo a um evento já gravado).
+        public readonly ?bool $preventiveMaintenance = null,
+        public readonly ?bool $calibration = null,
     ) {
         $this->accessories = OrderEquipmentAccessories::normalize($accessories);
     }

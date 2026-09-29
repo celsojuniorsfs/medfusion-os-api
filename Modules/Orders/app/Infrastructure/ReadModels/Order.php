@@ -20,11 +20,15 @@ use Modules\Identity\Infrastructure\ReadModels\User;
 #[Fillable([
     'id', 'number', 'date', 'client_id', 'user_id',
     'picked_up', 'warranty', 'technical_training', 'on_site_quote', 'rental',
-    'preventive_maintenance', 'calibration',
     'reported_defect', 'maintenance_plan', 'notes',
     'payment_method', 'warranty_period', 'proposal_validity',
     'labor_cost', 'total', 'status', 'status_changed_at', 'certificate_number',
     'pdf_path', 'pdf_generated_at',
+    // Vestigiais desde a #146 (preventiva/calibração viraram por equipamento) — não expostos
+    // por OrderResource/OrderRequest, servem só de fallback em
+    // OrderProjector::onOrderEquipmentAttached() pra replay de equipamentos anexados antes
+    // desta mudança. Ver comentário lá.
+    'preventive_maintenance', 'calibration',
 ])]
 class Order extends Model
 {
@@ -43,12 +47,12 @@ class Order extends Model
             'technical_training' => 'boolean',
             'on_site_quote' => 'boolean',
             'rental' => 'boolean',
-            'preventive_maintenance' => 'boolean',
-            'calibration' => 'boolean',
             'labor_cost' => 'decimal:2',
             'total' => 'decimal:2',
             'status_changed_at' => 'datetime',
             'pdf_generated_at' => 'datetime',
+            'preventive_maintenance' => 'boolean',
+            'calibration' => 'boolean',
         ];
     }
 

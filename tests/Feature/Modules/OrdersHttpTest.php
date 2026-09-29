@@ -162,22 +162,22 @@ class OrdersHttpTest extends TestCase
         $this->assertDatabaseHas('equipments', ['client_id' => $clientId, 'name' => 'Bisturi Elétrico']);
     }
 
-    public function test_creates_an_order_marked_as_preventive_maintenance_and_calibration(): void
+    public function test_creates_an_order_with_an_equipment_marked_as_preventive_maintenance_and_calibration(): void
     {
         $user = $this->authenticatedUser();
         $clientId = $this->aClientId();
 
         $payload = $this->minimalOrderPayload($clientId);
-        $payload['preventive_maintenance'] = true;
-        $payload['calibration'] = true;
+        $payload['equipments'][0]['preventive_maintenance'] = true;
+        $payload['equipments'][0]['calibration'] = true;
 
         $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload);
 
         $response->assertCreated();
-        $response->assertJsonPath('data.preventive_maintenance', true);
-        $response->assertJsonPath('data.calibration', true);
-        $this->assertDatabaseHas('orders', [
-            'number' => 1337,
+        $response->assertJsonPath('data.equipments.0.preventive_maintenance', true);
+        $response->assertJsonPath('data.equipments.0.calibration', true);
+        $this->assertDatabaseHas('order_equipments', [
+            'name' => 'Bisturi Elétrico',
             'preventive_maintenance' => true,
             'calibration' => true,
         ]);
@@ -192,8 +192,29 @@ class OrdersHttpTest extends TestCase
             ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId));
 
         $response->assertCreated();
-        $response->assertJsonPath('data.preventive_maintenance', false);
-        $response->assertJsonPath('data.calibration', false);
+        $response->assertJsonPath('data.equipments.0.preventive_maintenance', false);
+        $response->assertJsonPath('data.equipments.0.calibration', false);
+    }
+
+    public function test_equipments_in_the_same_order_can_have_different_preventive_and_calibration_flags(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['equipments'] = [
+            ['name' => 'Monitor', 'preventive_maintenance' => true, 'calibration' => true],
+            ['name' => 'Mesa cirúrgica', 'preventive_maintenance' => true, 'calibration' => false],
+        ];
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertCreated();
+        // Por nome, não por índice — a relação equipments() não garante a ordem de retorno.
+        $equipments = collect($response->json('data.equipments'))->keyBy('name');
+        $this->assertTrue($equipments['Monitor']['calibration']);
+        $this->assertFalse($equipments['Mesa cirúrgica']['calibration']);
+        $this->assertTrue($equipments['Mesa cirúrgica']['preventive_maintenance']);
     }
 
     public function test_creates_an_order_referencing_an_existing_equipment_and_with_items(): void

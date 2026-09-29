@@ -9,6 +9,7 @@ use Modules\Clients\Domain\ClientAggregate;
 use Modules\Clients\Domain\Enums\PersonType;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Orders\Domain\Enums\OrderStatus;
+use Modules\Orders\Domain\Events\OrderEquipmentAttached;
 use Modules\Orders\Domain\Events\OrderOpened;
 use Modules\Orders\Domain\Exceptions\InvalidOrderStatusTransition;
 use Modules\Orders\Domain\OrderAggregate;
@@ -77,36 +78,99 @@ class OrdersAggregateTest extends TestCase
         $this->assertEqualsWithDelta(200.0, (float) $order->total, 0.001);
     }
 
-    public function test_opening_an_order_with_preventive_maintenance_and_calibration_is_projected(): void
+    public function test_attaching_equipment_with_preventive_maintenance_and_calibration_is_projected(): void
+    {
+        $orderUuid = (string) Str::uuid();
+
+        OrderAggregate::retrieve($orderUuid)
+            ->open(1350, '2026-09-08', $this->aClientId(), $this->aUserId(), false, false, false, false, false, null, null, null, null, null, null, null)
+            ->attachEquipment(
+                (string) Str::uuid(), null, 'Monitor', null, null, null, null, [],
+                preventiveMaintenance: true, calibration: true,
+            )
+            ->persist();
+
+        $equipment = Order::with('equipments')->findOrFail($orderUuid)->equipments->first();
+        $this->assertTrue((bool) $equipment->preventive_maintenance);
+        $this->assertTrue((bool) $equipment->calibration);
+    }
+
+    /**
+     * Nem todo equipamento da mesma OS tem calibração (ex.: mesa cirúrgica só tem preventiva,
+     * confirmado com o cliente na validação de 28/09/2026) — cada equipamento marca o que é dele,
+     * sem contaminar os outros da mesma OS.
+     */
+    public function test_equipments_in_the_same_order_keep_independent_preventive_and_calibration_flags(): void
+    {
+        $orderUuid = (string) Str::uuid();
+
+        OrderAggregate::retrieve($orderUuid)
+            ->open(1350, '2026-09-08', $this->aClientId(), $this->aUserId(), false, false, false, false, false, null, null, null, null, null, null, null)
+            ->attachEquipment((string) Str::uuid(), null, 'Monitor', null, null, null, null, [], preventiveMaintenance: true, calibration: true)
+            ->attachEquipment((string) Str::uuid(), null, 'Mesa cirúrgica', null, null, null, null, [], preventiveMaintenance: true, calibration: false)
+            ->persist();
+
+        $equipments = Order::with('equipments')->findOrFail($orderUuid)->equipments->keyBy('name');
+        $this->assertTrue((bool) $equipments['Monitor']->calibration);
+        $this->assertFalse((bool) $equipments['Mesa cirúrgica']->calibration);
+        $this->assertTrue((bool) $equipments['Mesa cirúrgica']->preventive_maintenance);
+    }
+
+    /**
+     * Um OrderEquipmentAttached gravado antes do api#146 não tem preventiveMaintenance/
+     * calibration no payload — o construtor precisa continuar desserializando (ver CLAUDE.md §
+     * Acrescentar campo a um evento já gravado). O default é `null`, não `false`: precisa
+     * continuar distinguível de um evento novo que passou `false` de propósito, senão
+     * OrderProjector::onOrderEquipmentAttached() não sabe quando cair pro valor legado da OS
+     * (ver teste de fallback abaixo). Testado direto no evento, sem passar por replay de
+     * verdade: é o mesmo nível de garantia, mais barato de rodar.
+     */
+    public function test_order_equipment_attached_event_defaults_preventive_fields_to_null_when_absent_from_old_payload(): void
+    {
+        $event = new OrderEquipmentAttached(null, 'Bisturi', null, null, null, null, []);
+
+        $this->assertNull($event->preventiveMaintenance);
+        $this->assertNull($event->calibration);
+    }
+
+    /**
+     * O cenário real que motivou o `?bool = null` acima: um OrderEquipmentAttached gravado antes
+     * da #146 (sem os campos novos) precisa, num `event-sourcing:replay`, recuperar o valor
+     * verdadeiro que só existe no OrderOpened/OrderUpdated da mesma OS (coluna vestigial em
+     * `orders`, nunca removida por causa disso) — não pode silenciosamente virar `false`.
+     */
+    public function test_equipment_attached_without_explicit_flags_falls_back_to_the_orders_legacy_value(): void
     {
         $orderUuid = (string) Str::uuid();
 
         OrderAggregate::retrieve($orderUuid)
             ->open(
-                1350, '2026-09-08', $this->aClientId(), $this->aUserId(),
-                pickedUp: false, warranty: false, technicalTraining: false, onSiteQuote: false, rental: false,
-                reportedDefect: null, maintenancePlan: null, notes: null,
-                paymentMethod: null, warrantyPeriod: null, proposalValidity: null, laborCost: null,
+                1352, '2026-09-08', $this->aClientId(), $this->aUserId(), false, false, false, false, false,
+                null, null, null, null, null, null, null,
                 preventiveMaintenance: true, calibration: true,
             )
+            // Sem preventiveMaintenance/calibration — mesmo formato de um evento gravado antes
+            // da #146 (chega null no projector).
+            ->attachEquipment((string) Str::uuid(), null, 'Monitor', null, null, null, null, [])
             ->persist();
 
-        $order = Order::findOrFail($orderUuid);
-        $this->assertTrue((bool) $order->preventive_maintenance);
-        $this->assertTrue((bool) $order->calibration);
+        $equipment = Order::with('equipments')->findOrFail($orderUuid)->equipments->first();
+        $this->assertTrue((bool) $equipment->preventive_maintenance);
+        $this->assertTrue((bool) $equipment->calibration);
     }
 
     /**
      * Um OrderOpened gravado antes do api#134 não tem preventiveMaintenance/calibration no
-     * payload — o construtor precisa continuar desserializando com o default (ver CLAUDE.md §
-     * Acrescentar campo a um evento já gravado). Testado direto no evento, sem passar por
-     * replay de verdade: é o mesmo nível de garantia, mais barato de rodar.
+     * payload — o construtor precisa continuar desserializando com o default `false` (ver
+     * CLAUDE.md § Acrescentar campo a um evento já gravado). Continua coberto separadamente do
+     * equivalente em OrderEquipmentAttached acima: são duas classes de evento distintas, cada
+     * uma com sua própria obrigação de desserializar payload antigo, e o default aqui é `false`
+     * de propósito (bem diferente do `null` de lá — ver comentário na classe do evento).
      */
-    public function test_order_opened_event_defaults_preventive_fields_when_absent_from_old_payload(): void
+    public function test_order_opened_event_defaults_preventive_fields_to_false_when_absent_from_old_payload(): void
     {
         $event = new OrderOpened(
-            1351, '2026-09-08', (string) Str::uuid(), (string) Str::uuid(),
-            false, false, false, false, false,
+            1353, '2026-09-08', $this->aClientId(), $this->aUserId(), false, false, false, false, false,
             null, null, null, null, null, null, null,
         );
 

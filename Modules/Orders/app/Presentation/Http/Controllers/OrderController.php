@@ -125,8 +125,6 @@ class OrderController
                 $data['warranty_period'] ?? null,
                 $data['proposal_validity'] ?? null,
                 $data['labor_cost'] ?? null,
-                $data['preventive_maintenance'] ?? false,
-                $data['calibration'] ?? false,
             );
 
             $this->attachEquipmentsAndItems($order->id, $equipments, $data['items'] ?? []);
@@ -181,8 +179,6 @@ class OrderController
                 $data['warranty_period'] ?? null,
                 $data['proposal_validity'] ?? null,
                 $data['labor_cost'] ?? null,
-                $data['preventive_maintenance'] ?? false,
-                $data['calibration'] ?? false,
             );
 
             $this->attachEquipmentsAndItems($id, $equipments, $data['items'] ?? []);
@@ -256,6 +252,8 @@ class OrderController
                 'serial_number' => $equipment->serial_number,
                 'asset_tag' => $equipment->asset_tag,
                 'accessories' => $entry['accessories'] ?? [],
+                'preventive_maintenance' => $entry['preventive_maintenance'] ?? false,
+                'calibration' => $entry['calibration'] ?? false,
             ];
         }, $equipments);
     }
@@ -276,6 +274,8 @@ class OrderController
                 $equipment['serial_number'],
                 $equipment['asset_tag'],
                 $equipment['accessories'],
+                $equipment['preventive_maintenance'],
+                $equipment['calibration'],
             );
         }
 

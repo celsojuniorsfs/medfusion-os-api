@@ -57,11 +57,13 @@ plataforma:
 
 `php artisan config:cache` roda como parte do build, não do deploy.
 
-### Scheduler (novo — api#135)
+### Scheduler (novo — api#135, api#147)
 
-`orders:check-stalled` (alerta de OS parada/aguardando aprovação, ver seção seguinte) é o
-primeiro comando agendado do projeto — registrado em `routes/console.php` via `Schedule::`, rodando
-uma vez por dia.
+`orders:check-stalled` (alerta de OS parada/aguardando aprovação) foi o primeiro comando agendado
+do projeto. `orders:check-equipment-situations` (alerta por situação do equipamento, api#147) é o
+segundo — comando próprio, não reaproveita o primeiro (escadas de marcos diferentes: 7/15 fixo
+aqui, variável por status lá). Os dois registrados em `routes/console.php` via `Schedule::`,
+rodando uma vez por dia.
 
 **Pendente de verificar na implantação (F6)**: `Schedule::` só dispara de verdade se algo chamar
 `php artisan schedule:run` periodicamente. Não existia nenhum agendamento até agora, então isso

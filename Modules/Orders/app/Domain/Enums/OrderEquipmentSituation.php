@@ -27,4 +27,17 @@ enum OrderEquipmentSituation: string
             self::InAnalysis, self::AwaitingPart, self::ExternalRepair => false,
         };
     }
+
+    /**
+     * Marcos (em dias) do alerta por situação do equipamento (api#147), validado com o cliente na
+     * S5 — 7 e 15, mesmos pros três não-resolvidos (`external_repair` inclusive, "pra lembrar de
+     * cobrar o fornecedor"). Resolvido não alerta. Mesmo espírito de
+     * `OrderStatus::stalledAlertMilestoneDays()`, mas fixo por situação, não por status.
+     *
+     * @return list<int>
+     */
+    public function alertMilestoneDays(): array
+    {
+        return $this->isResolved() ? [] : [7, 15];
+    }
 }

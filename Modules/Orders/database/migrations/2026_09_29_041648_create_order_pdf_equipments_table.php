@@ -16,7 +16,8 @@ return new class extends Migration
         Schema::create('order_pdf_equipments', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->foreignUuid('order_pdf_id')->constrained('order_pdfs')->cascadeOnDelete();
-            // Catálogo (Equipment), não order_equipments — esse sim é estável.
+            // Catálogo (Equipment), não order_equipments — esse sim é estável. FK cross-module
+            // (Equipments), mesmo padrão de order_equipments.equipment_id.
             $table->foreignUuid('equipment_id')->nullable()->constrained('equipments')->nullOnDelete();
             $table->string('name');
             $table->unsignedInteger('position');

@@ -8,12 +8,12 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\Rule;
 use Modules\Orders\Application\RecordOrderPdf;
 use Modules\Orders\Infrastructure\ReadModels\Order;
 use Modules\Orders\Infrastructure\ReadModels\OrderPdf;
 use Modules\Orders\Presentation\Http\Resources\OrderPdfHistoryResource;
+use Modules\Orders\Presentation\Http\SignedPdfUrl;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OrderPdfController
@@ -138,12 +138,9 @@ class OrderPdfController
      */
     private function payload(string $id, string $path, string $generatedAt): array
     {
-        $expiresAt = now()->addMinutes(30);
-
         return [
-            'url' => URL::temporarySignedRoute('orders.pdf.download', $expiresAt, ['id' => $id]),
+            ...SignedPdfUrl::build('orders.pdf.download', ['id' => $id]),
             'generated_at' => $generatedAt,
-            'expires_at' => $expiresAt->toIso8601String(),
         ];
     }
 

@@ -4,8 +4,8 @@ namespace Modules\Orders\Presentation\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\URL;
 use Modules\Orders\Infrastructure\ReadModels\OrderPdfEquipment;
+use Modules\Orders\Presentation\Http\SignedPdfUrl;
 
 class OrderPdfHistoryResource extends JsonResource
 {
@@ -14,8 +14,6 @@ class OrderPdfHistoryResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $expiresAt = now()->addMinutes(30);
-
         return [
             'id' => $this->id,
             'generated_at' => $this->generated_at->toISOString(),
@@ -26,12 +24,7 @@ class OrderPdfHistoryResource extends JsonResource
                     'position' => $equipment->position,
                 ])
                 ->all(),
-            'url' => URL::temporarySignedRoute(
-                'orders.pdf.download-historical',
-                $expiresAt,
-                ['id' => $this->order_id, 'pdfId' => $this->id],
-            ),
-            'expires_at' => $expiresAt->toIso8601String(),
+            ...SignedPdfUrl::build('orders.pdf.download-historical', ['id' => $this->order_id, 'pdfId' => $this->id]),
         ];
     }
 }

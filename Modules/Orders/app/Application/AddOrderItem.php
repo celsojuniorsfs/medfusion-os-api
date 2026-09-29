@@ -12,7 +12,6 @@ class AddOrderItem
         float $quantity,
         string $description,
         ?float $unitPrice = null,
-        // api#149 — null = item geral (sem vínculo com equipamento específico).
         ?string $orderEquipmentId = null,
     ): Order {
         OrderAggregate::retrieve($orderId)

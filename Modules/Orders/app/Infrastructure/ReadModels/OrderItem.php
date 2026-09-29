@@ -34,8 +34,6 @@ class OrderItem extends Model
     }
 
     /**
-     * null quando o item é geral, sem vínculo com equipamento específico (api#149).
-     *
      * @return BelongsTo<OrderEquipment, $this>
      */
     public function orderEquipment(): BelongsTo

@@ -27,6 +27,9 @@ use Spatie\EventSourcing\EventHandlers\Projectors\Projector;
 
 class OrderProjector extends Projector
 {
+    /** @var array<string, true> */
+    private array $pendingTotalRecalculations = [];
+
     public function onOrderOpened(OrderOpened $event): void
     {
         Order::create([
@@ -112,7 +115,7 @@ class OrderProjector extends Projector
             ]);
         }
 
-        $this->recalculateTotal($order);
+        $this->scheduleTotalRecalculation($order->id);
 
         $this->forgetCache();
     }
@@ -150,14 +153,13 @@ class OrderProjector extends Projector
 
         OrderItem::create([
             'order_id' => $order->id,
-            // null = item geral, sem equipamento específico (api#149).
             'order_equipment_id' => $event->orderEquipmentId,
             'quantity' => $event->quantity,
             'description' => $event->description,
             'unit_price' => $event->unitPrice,
         ]);
 
-        $this->recalculateTotal($order);
+        $this->scheduleTotalRecalculation($order->id);
 
         $this->forgetCache();
     }
@@ -220,7 +222,7 @@ class OrderProjector extends Projector
             'calibration' => $event->calibration,
         ]);
 
-        $this->recalculateTotal($order);
+        $this->scheduleTotalRecalculation($order->id);
 
         $this->forgetCache();
     }
@@ -257,6 +259,8 @@ class OrderProjector extends Projector
                 'position' => $equipment->position,
             ]);
         }
+
+        $this->forgetCache();
     }
 
     public function onOrderEquipmentsCleared(OrderEquipmentsCleared $event): void
@@ -272,7 +276,7 @@ class OrderProjector extends Projector
 
         OrderItem::where('order_id', $order->id)->delete();
 
-        $this->recalculateTotal($order);
+        $this->scheduleTotalRecalculation($order->id);
 
         $this->forgetCache();
     }
@@ -289,6 +293,26 @@ class OrderProjector extends Projector
         $equipmentsLaborTotal = $order->equipments()->selectRaw('COALESCE(SUM(labor_cost), 0) as total')->value('total');
 
         $order->update(['total' => ($order->labor_cost ?? 0) + $equipmentsLaborTotal + $itemsTotal]);
+    }
+
+    /**
+     * Uma OS pode anexar dezenas de equipamentos/itens num único request (lote de prefeitura) —
+     * cada anexação dispararia seu próprio recalculateTotal (2 SUM + 1 UPDATE) se chamado direto.
+     * Mesmo idioma do forgetCache(): agenda pro afterCommit e deduplica por id, então só o último
+     * estado importa e o recálculo roda no máximo uma vez por OS por transação.
+     */
+    private function scheduleTotalRecalculation(string $orderId): void
+    {
+        if (isset($this->pendingTotalRecalculations[$orderId])) {
+            return;
+        }
+
+        $this->pendingTotalRecalculations[$orderId] = true;
+
+        DB::afterCommit(function () use ($orderId) {
+            unset($this->pendingTotalRecalculations[$orderId]);
+            $this->recalculateTotal(Order::findOrFail($orderId));
+        });
     }
 
     /**

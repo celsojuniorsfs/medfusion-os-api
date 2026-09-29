@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Modules\Clients\Domain\ClientAggregate;
 use Modules\Clients\Domain\Enums\PersonType;
+use Modules\Equipments\Application\RegisterEquipment;
 use Modules\Identity\Domain\Enums\UserRole;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
@@ -68,12 +69,17 @@ class OrderEquipmentSituationAlertsTest extends TestCase
      */
     private function anOrderWithOneEquipment(int $number = 1400): array
     {
+        $clientId = $this->aClientId();
         $order = app(OpenOrder::class)(
-            $number, '2026-09-08', $this->aClientId(), $this->aUserId(),
+            $number, '2026-09-08', $clientId, $this->aUserId(),
             false, false, false, false, false, null, null, null, null, null, null, null,
         );
 
-        app(AttachEquipmentToOrder::class)($order->id, null, 'Monitor', null, null, null, null, []);
+        // Com equipment_id do catálogo (não null) — igual ao que OrderController sempre grava na
+        // prática (cadastra implicitamente se a OS não informar um existente), diferente do
+        // equipamento "órfão" de catálogo que o próprio alerta agora ignora (ver Q12/api#136).
+        $catalogEquipment = app(RegisterEquipment::class)($clientId, 'Monitor');
+        app(AttachEquipmentToOrder::class)($order->id, $catalogEquipment->id, 'Monitor', null, null, null, null, []);
 
         $equipment = OrderEquipment::where('order_id', $order->id)->firstOrFail();
 
@@ -110,7 +116,8 @@ class OrderEquipmentSituationAlertsTest extends TestCase
         Mail::assertNotSent(OrderEquipmentSituationMail::class, $technician->email);
 
         $this->assertDatabaseHas('order_equipment_situation_alerts', [
-            'order_equipment_id' => $equipment->id,
+            'order_id' => $equipment->order_id,
+            'equipment_id' => $equipment->equipment_id,
             'situation' => 'in_analysis',
             'milestone_days' => 7,
         ]);
@@ -209,6 +216,59 @@ class OrderEquipmentSituationAlertsTest extends TestCase
     }
 
     /**
+     * Regressão: order_equipment_id troca a cada PUT na OS (api#149) — o rastro de idempotência
+     * precisa sobreviver a isso chaveando por equipment_id do catálogo, não pela linha efêmera.
+     */
+    public function test_editing_the_order_does_not_resend_an_already_sent_milestone(): void
+    {
+        Mail::fake();
+
+        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
+        [$order, $equipment] = $this->anOrderWithOneEquipment();
+
+        $this->travel(8)->days();
+        app(CheckEquipmentSituations::class)($this->recipientEmails());
+        Mail::assertSentTimes(OrderEquipmentSituationMail::class, 1);
+
+        // Mesmo efeito de um PUT /orders/{id}: limpa e reanexa o mesmo equipamento do catálogo,
+        // preservando situation/situation_changed_at (OrderController::resolveEquipments).
+        OrderAggregate::retrieve($order->id)->clearEquipments()->persist();
+        app(AttachEquipmentToOrder::class)(
+            $order->id, $equipment->equipment_id, $equipment->name, $equipment->brand, $equipment->model,
+            $equipment->serial_number, $equipment->asset_tag, [], false, false,
+            $equipment->situation, $equipment->situation_changed_at->toISOString(),
+        );
+
+        $secondRunSent = app(CheckEquipmentSituations::class)($this->recipientEmails());
+
+        $this->assertSame(0, $secondRunSent);
+        Mail::assertSentTimes(OrderEquipmentSituationMail::class, 1);
+    }
+
+    /**
+     * Q12 (api#136): sem equipment_id (nunca vinculado ao catálogo, ou saiu dele) não tem
+     * identidade estável pra chavear o alerta.
+     */
+    public function test_an_equipment_without_a_catalog_link_does_not_alert(): void
+    {
+        Mail::fake();
+
+        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
+        $order = app(OpenOrder::class)(
+            1402, '2026-09-08', $this->aClientId(), $this->aUserId(),
+            false, false, false, false, false, null, null, null, null, null, null, null,
+        );
+        app(AttachEquipmentToOrder::class)($order->id, null, 'Monitor', null, null, null, null, []);
+
+        $this->travel(20)->days();
+
+        $sent = app(CheckEquipmentSituations::class)($this->recipientEmails());
+
+        $this->assertSame(0, $sent);
+        Mail::assertNothingSent();
+    }
+
+    /**
      * S5: só equipamento de OS que não chegou a um status final. Uma OS cancelada não alerta,
      * mesmo com o equipamento ainda tecnicamente "em análise".
      */
@@ -237,12 +297,15 @@ class OrderEquipmentSituationAlertsTest extends TestCase
         Mail::fake();
 
         User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
+        $clientId = $this->aClientId();
         $order = app(OpenOrder::class)(
-            1401, '2026-09-08', $this->aClientId(), $this->aUserId(),
+            1401, '2026-09-08', $clientId, $this->aUserId(),
             false, false, false, false, false, null, null, null, null, null, null, null,
         );
-        app(AttachEquipmentToOrder::class)($order->id, null, 'Monitor', null, null, null, null, []);
-        app(AttachEquipmentToOrder::class)($order->id, null, 'Bomba de infusão', null, null, null, null, []);
+        $monitor = app(RegisterEquipment::class)($clientId, 'Monitor');
+        $pump = app(RegisterEquipment::class)($clientId, 'Bomba de infusão');
+        app(AttachEquipmentToOrder::class)($order->id, $monitor->id, 'Monitor', null, null, null, null, []);
+        app(AttachEquipmentToOrder::class)($order->id, $pump->id, 'Bomba de infusão', null, null, null, null, []);
         $equipments = OrderEquipment::where('order_id', $order->id)->orderBy('position')->get();
 
         OrderAggregate::retrieve($order->id)

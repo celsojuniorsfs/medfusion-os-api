@@ -13,6 +13,7 @@ use Modules\Equipments\Infrastructure\ReadModels\Equipment;
 #[Fillable([
     'id', 'order_id', 'equipment_id', 'name', 'brand', 'model', 'serial_number', 'asset_tag',
     'preventive_maintenance', 'calibration',
+    'situation', 'situation_changed_at', 'completed_at', 'position',
 ])]
 class OrderEquipment extends Model
 {
@@ -31,6 +32,9 @@ class OrderEquipment extends Model
         return [
             'preventive_maintenance' => 'boolean',
             'calibration' => 'boolean',
+            'situation_changed_at' => 'datetime',
+            'completed_at' => 'datetime',
+            'position' => 'integer',
         ];
     }
 

@@ -47,6 +47,17 @@ class OrderEquipmentAttached extends ShouldBeStored
         // mudança (CLAUDE.md § Acrescentar campo a um evento já gravado).
         public readonly ?bool $preventiveMaintenance = null,
         public readonly ?bool $calibration = null,
+        // api#140 — null significa "sem situação anterior a preservar": equipamento novo (a
+        // Application layer só passa um valor aqui quando UpdateOrder está reanexando um
+        // equipamento que já existia, pra sobreviver à edição — ver
+        // OrderController::resolveEquipments()). Eventos gravados antes da #140 também chegam
+        // com null, e null é o comportamento certo pros dois casos: o projector usa o default
+        // (in_analysis, sem completed_at) — não existe "situação legada" a recuperar aqui, ao
+        // contrário de preventiveMaintenance/calibration acima (que tinham um valor real por OS
+        // antes da #146).
+        public readonly ?string $situation = null,
+        public readonly ?string $situationChangedAt = null,
+        public readonly ?string $completedAt = null,
     ) {
         $this->accessories = OrderEquipmentAccessories::normalize($accessories);
     }

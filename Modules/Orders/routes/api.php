@@ -17,6 +17,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::put('/orders/{id}', [OrderController::class, 'update']);
     Route::patch('/orders/{id}/status', [OrderController::class, 'updateStatus']);
+    Route::patch('/orders/{id}/equipments/situation', [OrderController::class, 'updateEquipmentsSituation']);
 
     Route::post('/orders/{id}/pdf', [OrderPdfController::class, 'store']);
     Route::get('/orders/{id}/pdf', [OrderPdfController::class, 'show']);

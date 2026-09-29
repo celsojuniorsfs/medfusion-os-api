@@ -2,9 +2,11 @@
 
 namespace Modules\Orders\Domain;
 
+use Modules\Orders\Domain\Enums\OrderEquipmentSituation;
 use Modules\Orders\Domain\Enums\OrderStatus;
 use Modules\Orders\Domain\Events\OrderEquipmentAttached;
 use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
+use Modules\Orders\Domain\Events\OrderEquipmentSituationChanged;
 use Modules\Orders\Domain\Events\OrderItemAdded;
 use Modules\Orders\Domain\Events\OrderItemsCleared;
 use Modules\Orders\Domain\Events\OrderOpened;
@@ -66,11 +68,34 @@ class OrderAggregate extends AggregateRoot
         array $accessories,
         ?bool $preventiveMaintenance = null,
         ?bool $calibration = null,
+        // api#140 — preenchidos só quando UpdateOrder está reanexando um equipamento que já
+        // existia (pra sobreviver à edição, ver OrderController::resolveEquipments()); null pra
+        // equipamento novo, mesmo default do evento (ver comentário lá).
+        ?string $situation = null,
+        ?string $situationChangedAt = null,
+        ?string $completedAt = null,
     ): self {
         $this->recordThat(new OrderEquipmentAttached(
             $equipmentId, $name, $brand, $model, $serialNumber, $assetTag, $accessories, $orderEquipmentId,
-            $preventiveMaintenance, $calibration,
+            $preventiveMaintenance, $calibration, $situation, $situationChangedAt, $completedAt,
         ));
+
+        return $this;
+    }
+
+    /**
+     * api#140 — situação técnica de UM equipamento, independente do status da OS. `$from` não é
+     * gravado por redundância: o agregado não rastreia situação por equipamento (mesmo motivo de
+     * `attachEquipment()` não alimentar nenhum estado aqui — quem lê é sempre o read model, ver
+     * ChangeOrderEquipmentSituation), mas o evento guarda `from` porque é dado de auditoria útil
+     * (e replay-safe: uma vez gravado, nunca muda).
+     */
+    public function changeEquipmentSituation(
+        string $orderEquipmentId,
+        OrderEquipmentSituation $from,
+        OrderEquipmentSituation $to,
+    ): self {
+        $this->recordThat(new OrderEquipmentSituationChanged($orderEquipmentId, $from->value, $to->value));
 
         return $this;
     }
@@ -144,12 +169,23 @@ class OrderAggregate extends AggregateRoot
     }
 
     /**
+     * $automatic (api#140) — `true` só quando vem de `OrderStatus::derivedFromEquipments()`
+     * (ver DeriveOrderStatusFromEquipments/ChangeOrderEquipmentSituation): entrar em
+     * `partially_completed`, ou sair dele de volta pra `approved`, não é uma decisão manual (ver
+     * `OrderStatus::isAutomaticOnlyTransition()`), e um PATCH /orders/{id}/status tentando isso é
+     * rejeitado com a mesma exceção de uma transição fora da tabela.
+     *
      * @throws InvalidOrderStatusTransition quando a transição não está na tabela de
-     *                                      api-conventions.md § Status da OS (ex.: completed → in_analysis).
+     *                                      api-conventions.md § Status da OS (ex.: completed → in_analysis)
+     *                                      ou é automática-só e não veio marcada como tal.
      */
-    public function changeStatus(OrderStatus $to): self
+    public function changeStatus(OrderStatus $to, bool $automatic = false): self
     {
         if (! $this->status->canTransitionTo($to)) {
+            throw new InvalidOrderStatusTransition($this->status, $to);
+        }
+
+        if (! $automatic && $this->status->isAutomaticOnlyTransition($to)) {
             throw new InvalidOrderStatusTransition($this->status, $to);
         }
 
@@ -164,6 +200,8 @@ class OrderAggregate extends AggregateRoot
     }
 
     protected function applyOrderEquipmentAttached(OrderEquipmentAttached $event): void {}
+
+    protected function applyOrderEquipmentSituationChanged(OrderEquipmentSituationChanged $event): void {}
 
     protected function applyOrderItemAdded(OrderItemAdded $event): void {}
 

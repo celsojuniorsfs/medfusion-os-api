@@ -93,14 +93,17 @@ Clients     ← lido por: Equipments (Client::findOrFail no controller) e Orders
 Accessories ← lido por: Equipments (RegisterAccessory chamado da Presentation pra cadastrar um
               acessório novo digitado na hora, ver EquipmentController::resolveAccessories; FK de
               verdade no banco em equipment_accessories.accessory_id, api#92)
-Equipments  ← lido por: Orders (OrderEquipment, e uma FK de verdade no banco)
-Orders      ← não é lido por nenhum outro módulo — fica no topo da pilha
+Equipments  ← lido por: Orders (OrderEquipment, e uma FK de verdade no banco) e Alerts
+              (equipment_revision_alerts.equipment_id, FK de verdade)
+Orders      ← lido por: Alerts (OrderEquipment/Order na Presentation do comando agendado, e
+              order_id/equipment_revision_alerts.order_id, FK de verdade)
+Alerts      ← não é lido por nenhum outro módulo — fica no topo da pilha (api#136)
 ```
 
 `Clients`, `Identity`, `Accessories` e `EquipmentModels` são a base do grafo. **No `Domain` e no
-`Application` deles, nunca importe nada de um módulo "de cima"** (`Equipments`/`Orders`) — é o que o
-`ModuleBoundariesTest` trava, e se você precisar disso, pare: é sinal de que a dependência foi
-modelada ao contrário.
+`Application` deles, nunca importe nada de um módulo "de cima"** (`Equipments`/`Orders`/`Alerts`) —
+é o que o `ModuleBoundariesTest` trava, e se você precisar disso, pare: é sinal de que a
+dependência foi modelada ao contrário.
 
 **Na `Presentation`, compor leitura para cima é permitido e já é praticado** — não confunda as duas
 coisas (esta frase já esteve absoluta aqui e contradizia o próprio código). `ClientController`, de

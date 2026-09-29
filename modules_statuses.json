@@ -4,5 +4,6 @@
     "Equipments": true,
     "Orders": true,
     "Accessories": true,
-    "EquipmentModels": true
+    "EquipmentModels": true,
+    "Alerts": true
 }

@@ -48,6 +48,10 @@ tags:
       qualquer cliente
   - name: orders
     description: Ordens de Serviço
+  - name: alerts
+    description: >
+      Alertas operacionais (api#136) — só administrative/general_admin. Revisão anual por
+      equipamento é o primeiro tipo; outros tipos (hoje só por e-mail) entram numa issue futura.
 
 security:
   - bearerAuth: []
@@ -1125,6 +1129,60 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /alerts/revisions:
+    get:
+      tags: [alerts]
+      summary: Lista os alertas de revisão anual por equipamento pendentes de contato
+      description: >
+        api#136 — disparados (mês 6 ou 11 desde a última manutenção preventiva concluída) e ainda
+        sem "cliente contatado". Provisório: uma issue futura substitui por um GET /alerts
+        unificado, somando outros tipos de alerta hoje só por e-mail.
+      operationId: listEquipmentRevisionAlerts
+      responses:
+        "200":
+          description: Alertas pendentes de contato
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/EquipmentRevisionAlert" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /alerts/revisions/{id}/contacted:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [alerts]
+      summary: Marca "cliente contatado" num alerta de revisão
+      description: >
+        api#136 — mão única e idempotente: marcar de novo devolve 200 sem alterar
+        client_contacted_at. Impede a cobrança de 7 dias pra este alerta.
+      operationId: markEquipmentRevisionAlertContacted
+      responses:
+        "200":
+          description: Alerta marcado (ou já estava)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/EquipmentRevisionAlert" }
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1160,6 +1218,11 @@ components:
   responses:
     Unauthorized:
       description: Token ausente, inválido ou expirado
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Usuário autenticado, mas sem o papel necessário (só administrative/general_admin)
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -1724,6 +1787,36 @@ components:
             description: "URL assinada própria desta entrada, ver GET /orders/{id}/pdf/{pdfId}/download",
           }
         expires_at: { type: string, format: date-time }
+
+    EquipmentRevisionAlert:
+      type: object
+      description: >
+        Alerta de revisão anual por equipamento (api#136). Mês 6 = acompanhamento, mês 11 =
+        revisão (1 mês antes do vencimento de 12 meses) — contados da última manutenção
+        preventiva concluída daquele equipamento, entre todas as OS's que ele já passou.
+      properties:
+        id: { type: string, format: uuid }
+        milestone: { type: string, enum: [month_6, month_11] }
+        due_date: { type: string, format: date-time }
+        notified_at: { type: string, format: date-time }
+        client_contacted_at: { type: ["string", "null"], format: date-time }
+        billing_notified_at:
+          {
+            type: ["string", "null"],
+            format: date-time,
+            description: "Cobrança ao general_admin, 7 dias após notified_at sem contato",
+          }
+        equipment:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+        order:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            number: { type: integer }
+            client_name: { type: ["string", "null"] }
 
     Order:
       type: object

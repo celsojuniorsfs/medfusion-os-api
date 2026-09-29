@@ -4,10 +4,7 @@ namespace Tests\Feature\Modules;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
-use Modules\Alerts\Infrastructure\Mail\EquipmentRevisionBillingMail;
-use Modules\Alerts\Infrastructure\Mail\EquipmentRevisionMail;
 use Modules\Alerts\Infrastructure\ReadModels\EquipmentRevisionAlert;
 use Modules\Clients\Domain\ClientAggregate;
 use Modules\Clients\Domain\Enums\PersonType;
@@ -69,16 +66,6 @@ class AlertsEquipmentRevisionTest extends TestCase
     }
 
     /**
-     * @return list<string>
-     */
-    private function recipientEmails(): array
-    {
-        return User::whereIn('role', [UserRole::Administrative->value, UserRole::GeneralAdmin->value])
-            ->pluck('email')
-            ->all();
-    }
-
-    /**
      * @return array{0: Order, 1: OrderEquipment}
      */
     private function anOrderWithAnEquipment(int $number, bool $preventiveMaintenance, ?string $equipmentCatalogId = null): array
@@ -107,11 +94,8 @@ class AlertsEquipmentRevisionTest extends TestCase
         return $equipment->fresh();
     }
 
-    public function test_completed_with_preventive_maintenance_alerts_at_month_6_even_if_order_is_partially_completed(): void
+    public function test_claims_a_month_6_milestone_even_if_order_is_partially_completed(): void
     {
-        Mail::fake();
-        $generalAdmin = User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
-
         $clientId = $this->aClientId();
         $order = app(OpenOrder::class)(
             1500, '2026-01-08', $clientId, $this->aUserId(),
@@ -137,7 +121,6 @@ class AlertsEquipmentRevisionTest extends TestCase
 
         $this->artisan('alerts:check-equipment-revisions')->assertSuccessful();
 
-        Mail::assertSent(EquipmentRevisionMail::class, $generalAdmin->email);
         $this->assertDatabaseHas('equipment_revision_alerts', [
             'equipment_id' => $monitor->id,
             'milestone' => 'month_6',
@@ -146,34 +129,28 @@ class AlertsEquipmentRevisionTest extends TestCase
 
     public function test_returned_unrepaired_does_not_alert(): void
     {
-        Mail::fake();
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         [$order, $equipment] = $this->anOrderWithAnEquipment(1501, preventiveMaintenance: true);
         $this->resolve($order, $equipment, OrderEquipmentSituation::ReturnedUnrepaired);
 
         $this->travel(20)->months();
         $this->artisan('alerts:check-equipment-revisions');
 
-        Mail::assertNothingSent();
+        $this->assertDatabaseCount('equipment_revision_alerts', 0);
     }
 
     public function test_completed_without_preventive_maintenance_does_not_alert(): void
     {
-        Mail::fake();
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         [$order, $equipment] = $this->anOrderWithAnEquipment(1502, preventiveMaintenance: false);
         $this->resolve($order, $equipment, OrderEquipmentSituation::Completed);
 
         $this->travel(20)->months();
         $this->artisan('alerts:check-equipment-revisions');
 
-        Mail::assertNothingSent();
+        $this->assertDatabaseCount('equipment_revision_alerts', 0);
     }
 
     public function test_equipment_without_a_catalog_link_does_not_alert(): void
     {
-        Mail::fake();
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         $clientId = $this->aClientId();
         $order = app(OpenOrder::class)(
             1503, '2026-01-08', $clientId, $this->aUserId(),
@@ -186,13 +163,11 @@ class AlertsEquipmentRevisionTest extends TestCase
         $this->travel(20)->months();
         $this->artisan('alerts:check-equipment-revisions');
 
-        Mail::assertNothingSent();
+        $this->assertDatabaseCount('equipment_revision_alerts', 0);
     }
 
     public function test_running_twice_the_same_day_does_not_duplicate(): void
     {
-        Mail::fake();
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         [$order, $equipment] = $this->anOrderWithAnEquipment(1504, preventiveMaintenance: true);
         $this->resolve($order, $equipment, OrderEquipmentSituation::Completed);
 
@@ -202,30 +177,11 @@ class AlertsEquipmentRevisionTest extends TestCase
         $this->artisan('alerts:check-equipment-revisions');
         $this->artisan('alerts:check-equipment-revisions');
 
-        Mail::assertSentTimes(EquipmentRevisionMail::class, 1);
+        $this->assertDatabaseCount('equipment_revision_alerts', 1);
     }
 
-    public function test_sends_alert_to_administrative_and_general_admin_but_not_technician(): void
+    public function test_month_11_is_claimed_independently_of_month_6_contact(): void
     {
-        Mail::fake();
-        $administrative = User::findOrFail($this->aUserId(UserRole::Administrative, 'administrativo@medfusion.example'));
-        $generalAdmin = User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
-        $technician = User::findOrFail($this->aUserId(UserRole::Technician, 'tecnico@medfusion.example'));
-        [$order, $equipment] = $this->anOrderWithAnEquipment(1520, preventiveMaintenance: true);
-        $this->resolve($order, $equipment, OrderEquipmentSituation::Completed);
-
-        $this->travel(6)->months();
-        $this->travel(2)->days();
-        $this->artisan('alerts:check-equipment-revisions');
-
-        Mail::assertSent(EquipmentRevisionMail::class, $administrative->email);
-        Mail::assertSent(EquipmentRevisionMail::class, $generalAdmin->email);
-        Mail::assertNotSent(EquipmentRevisionMail::class, $technician->email);
-    }
-
-    public function test_month_11_alerts_independently_of_month_6_contact(): void
-    {
-        Mail::fake();
         $admin = User::findOrFail($this->aUserId(UserRole::Administrative, 'administrativo@medfusion.example'));
         [$order, $equipment] = $this->anOrderWithAnEquipment(1505, preventiveMaintenance: true);
         $this->resolve($order, $equipment, OrderEquipmentSituation::Completed);
@@ -233,7 +189,7 @@ class AlertsEquipmentRevisionTest extends TestCase
         $this->travel(6)->months();
         $this->travel(2)->days();
         $this->artisan('alerts:check-equipment-revisions');
-        Mail::assertSentTimes(EquipmentRevisionMail::class, 1);
+        $this->assertDatabaseCount('equipment_revision_alerts', 1);
 
         $alert = EquipmentRevisionAlert::where('milestone', 'month_6')->firstOrFail();
         $this->actingAs($admin, 'sanctum')
@@ -243,16 +199,11 @@ class AlertsEquipmentRevisionTest extends TestCase
         $this->travel(5)->months();
         $this->artisan('alerts:check-equipment-revisions');
 
-        Mail::assertSentTimes(EquipmentRevisionMail::class, 2);
         $this->assertDatabaseHas('equipment_revision_alerts', ['milestone' => 'month_11']);
     }
 
-    public function test_billing_reaches_only_general_admin_after_7_days_without_contact(): void
+    public function test_billing_marks_the_alert_after_7_days_without_contact(): void
     {
-        Mail::fake();
-        $administrative = User::findOrFail($this->aUserId(UserRole::Administrative, 'administrativo@medfusion.example'));
-        $technician = User::findOrFail($this->aUserId(UserRole::Technician, 'tecnico@medfusion.example'));
-        $generalAdmin = User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         [$order, $equipment] = $this->anOrderWithAnEquipment(1506, preventiveMaintenance: true);
         $this->resolve($order, $equipment, OrderEquipmentSituation::Completed);
 
@@ -263,16 +214,12 @@ class AlertsEquipmentRevisionTest extends TestCase
         $this->travel(7)->days();
         $this->artisan('alerts:check-equipment-revisions');
 
-        Mail::assertSent(EquipmentRevisionBillingMail::class, $generalAdmin->email);
-        Mail::assertNotSent(EquipmentRevisionBillingMail::class, $administrative->email);
-        Mail::assertNotSent(EquipmentRevisionBillingMail::class, $technician->email);
+        $this->assertNotNull(EquipmentRevisionAlert::where('milestone', 'month_6')->firstOrFail()->billing_notified_at);
     }
 
     public function test_marking_contacted_prevents_the_billing(): void
     {
-        Mail::fake();
         $admin = User::findOrFail($this->aUserId(UserRole::Administrative, 'administrativo@medfusion.example'));
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         [$order, $equipment] = $this->anOrderWithAnEquipment(1507, preventiveMaintenance: true);
         $this->resolve($order, $equipment, OrderEquipmentSituation::Completed);
 
@@ -288,13 +235,11 @@ class AlertsEquipmentRevisionTest extends TestCase
         $this->travel(7)->days();
         $this->artisan('alerts:check-equipment-revisions');
 
-        Mail::assertNotSent(EquipmentRevisionBillingMail::class);
+        $this->assertNull(EquipmentRevisionAlert::findOrFail($alert->id)->billing_notified_at);
     }
 
-    public function test_billing_does_not_repeat(): void
+    public function test_billing_is_marked_only_once(): void
     {
-        Mail::fake();
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         [$order, $equipment] = $this->anOrderWithAnEquipment(1508, preventiveMaintenance: true);
         $this->resolve($order, $equipment, OrderEquipmentSituation::Completed);
 
@@ -304,10 +249,14 @@ class AlertsEquipmentRevisionTest extends TestCase
 
         $this->travel(7)->days();
         $this->artisan('alerts:check-equipment-revisions');
+        $firstBillingNotifiedAt = EquipmentRevisionAlert::where('milestone', 'month_6')->firstOrFail()->billing_notified_at;
+
         $this->travel(7)->days();
         $this->artisan('alerts:check-equipment-revisions');
 
-        Mail::assertSentTimes(EquipmentRevisionBillingMail::class, 1);
+        $this->assertTrue($firstBillingNotifiedAt->equalTo(
+            EquipmentRevisionAlert::where('milestone', 'month_6')->firstOrFail()->billing_notified_at,
+        ));
     }
 
     /**
@@ -316,15 +265,13 @@ class AlertsEquipmentRevisionTest extends TestCase
      */
     public function test_a_new_resolution_supersedes_the_previous_cycle_and_cancels_its_pending_billing(): void
     {
-        Mail::fake();
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         [$firstOrder, $firstEquipment] = $this->anOrderWithAnEquipment(1509, preventiveMaintenance: true);
         $this->resolve($firstOrder, $firstEquipment, OrderEquipmentSituation::Completed);
 
         $this->travel(6)->months();
         $this->travel(2)->days();
         $this->artisan('alerts:check-equipment-revisions');
-        Mail::assertSentTimes(EquipmentRevisionMail::class, 1);
+        $this->assertDatabaseCount('equipment_revision_alerts', 1);
 
         $this->travel(2)->days();
         [$secondOrder, $secondEquipment] = $this->anOrderWithAnEquipment(1510, preventiveMaintenance: true, equipmentCatalogId: $firstEquipment->equipment_id);
@@ -334,7 +281,6 @@ class AlertsEquipmentRevisionTest extends TestCase
         $this->travel(5)->days();
         $this->artisan('alerts:check-equipment-revisions');
 
-        Mail::assertNotSent(EquipmentRevisionBillingMail::class);
         $this->assertDatabaseHas('equipment_revision_alerts', [
             'order_id' => $firstOrder->id,
             'milestone' => 'month_6',
@@ -347,17 +293,15 @@ class AlertsEquipmentRevisionTest extends TestCase
         ]);
     }
 
-    public function test_editing_the_order_does_not_resend_or_restart_the_cycle(): void
+    public function test_editing_the_order_does_not_reclaim_or_restart_the_cycle(): void
     {
-        Mail::fake();
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         [$order, $equipment] = $this->anOrderWithAnEquipment(1511, preventiveMaintenance: true);
         $equipment = $this->resolve($order, $equipment, OrderEquipmentSituation::Completed);
 
         $this->travel(6)->months();
         $this->travel(2)->days();
         $this->artisan('alerts:check-equipment-revisions');
-        Mail::assertSentTimes(EquipmentRevisionMail::class, 1);
+        $this->assertDatabaseCount('equipment_revision_alerts', 1);
 
         // Mesmo efeito de um PUT /orders/{id}: limpa e reanexa o mesmo equipamento do catálogo,
         // preservando situation/situation_changed_at (OrderController::resolveEquipments).
@@ -371,7 +315,6 @@ class AlertsEquipmentRevisionTest extends TestCase
 
         $this->artisan('alerts:check-equipment-revisions');
 
-        Mail::assertSentTimes(EquipmentRevisionMail::class, 1);
         $this->assertSame(1, EquipmentRevisionAlert::where('equipment_id', $equipment->equipment_id)->count());
     }
 

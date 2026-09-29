@@ -3,8 +3,6 @@
 namespace Modules\Orders\Presentation\Console\Commands;
 
 use Illuminate\Console\Command;
-use Modules\Identity\Domain\Enums\UserRole;
-use Modules\Identity\Infrastructure\ReadModels\User;
 use Modules\Orders\Application\CheckEquipmentSituations;
 
 /**
@@ -15,17 +13,13 @@ class CheckEquipmentSituationsCommand extends Command
 {
     protected $signature = 'orders:check-equipment-situations';
 
-    protected $description = 'Verifica equipamentos parados numa situação não resolvida e dispara os alertas dos marcos vencidos';
+    protected $description = 'Verifica equipamentos parados numa situação não resolvida e grava os marcos vencidos';
 
     public function handle(CheckEquipmentSituations $checkEquipmentSituations): int
     {
-        $recipientEmails = User::whereIn('role', [UserRole::Administrative->value, UserRole::GeneralAdmin->value])
-            ->pluck('email')
-            ->all();
+        $claimed = $checkEquipmentSituations();
 
-        $sent = $checkEquipmentSituations($recipientEmails);
-
-        $this->info("{$sent} alerta(s) de situação de equipamento disparado(s).");
+        $this->info("{$claimed} marco(s) de situação de equipamento registrado(s).");
 
         return self::SUCCESS;
     }

@@ -3,30 +3,22 @@
 namespace Modules\Orders\Presentation\Console\Commands;
 
 use Illuminate\Console\Command;
-use Modules\Identity\Domain\Enums\UserRole;
-use Modules\Identity\Infrastructure\ReadModels\User;
 use Modules\Orders\Application\CheckStalledOrders;
 
 /**
- * Agendado diário em routes/console.php (api#135). Fino de propósito: resolve os destinatários
- * (administrative/general_admin) aqui, não na Action — Presentation pode compor leitura entre
- * módulos, Application não (ver docs/architecture.md).
+ * Agendado diário em routes/console.php (api#135).
  */
 class CheckStalledOrdersCommand extends Command
 {
     protected $signature = 'orders:check-stalled';
 
-    protected $description = 'Verifica OS paradas (e aguardando aprovação) e dispara os alertas/baixa automática dos marcos vencidos';
+    protected $description = 'Verifica OS paradas (e aguardando aprovação), grava os marcos vencidos e aplica a baixa automática';
 
     public function handle(CheckStalledOrders $checkStalledOrders): int
     {
-        $recipientEmails = User::whereIn('role', [UserRole::Administrative->value, UserRole::GeneralAdmin->value])
-            ->pluck('email')
-            ->all();
+        $claimed = $checkStalledOrders();
 
-        $sent = $checkStalledOrders($recipientEmails);
-
-        $this->info("{$sent} alerta(s) de OS parada disparado(s).");
+        $this->info("{$claimed} marco(s) de OS parada registrado(s).");
 
         return self::SUCCESS;
     }

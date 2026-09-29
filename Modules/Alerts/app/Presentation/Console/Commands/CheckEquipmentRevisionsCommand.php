@@ -4,8 +4,6 @@ namespace Modules\Alerts\Presentation\Console\Commands;
 
 use Illuminate\Console\Command;
 use Modules\Alerts\Application\CheckEquipmentRevisions;
-use Modules\Identity\Domain\Enums\UserRole;
-use Modules\Identity\Infrastructure\ReadModels\User;
 use Modules\Orders\Domain\Enums\OrderEquipmentSituation;
 use Modules\Orders\Infrastructure\ReadModels\OrderEquipment;
 
@@ -18,19 +16,13 @@ class CheckEquipmentRevisionsCommand extends Command
 {
     protected $signature = 'alerts:check-equipment-revisions';
 
-    protected $description = 'Verifica equipamentos com manutenção preventiva concluída há 6/11 meses e dispara os alertas de revisão';
+    protected $description = 'Verifica equipamentos com manutenção preventiva concluída há 6/11 meses e grava os marcos de revisão vencidos';
 
     public function handle(CheckEquipmentRevisions $checkEquipmentRevisions): int
     {
-        $recipientEmails = User::whereIn('role', [UserRole::Administrative->value, UserRole::GeneralAdmin->value])
-            ->pluck('email')
-            ->all();
+        $result = $checkEquipmentRevisions($this->eligibleCycles());
 
-        $billingEmails = User::where('role', UserRole::GeneralAdmin->value)->pluck('email')->all();
-
-        $result = $checkEquipmentRevisions($this->eligibleCycles(), $recipientEmails, $billingEmails);
-
-        $this->info("{$result['revisions_sent']} aviso(s) de revisão disparado(s), {$result['billing_sent']} cobrança(s).");
+        $this->info("{$result['revisions_claimed']} marco(s) de revisão registrado(s), {$result['billing_claimed']} cobrança(s) marcada(s).");
 
         return self::SUCCESS;
     }
@@ -44,9 +36,9 @@ class CheckEquipmentRevisionsCommand extends Command
      *
      * O "última por equipamento" é filtrado em SQL (subquery correlacionada), não em PHP depois
      * do `get()` — um equipamento com muitas OS's ao longo dos anos não pode crescer o custo desta
-     * consulta (e o eager load de order.client) com todo o histórico dele, só a linha vencedora.
+     * consulta com todo o histórico dele, só a linha vencedora.
      *
-     * @return list<array{equipment_id: string, order_id: string, base_date: string, order_number: int, client_name: ?string}>
+     * @return list<array{equipment_id: string, order_id: string, base_date: string}>
      */
     private function eligibleCycles(): array
     {
@@ -62,7 +54,6 @@ class CheckEquipmentRevisionsCommand extends Command
                 and oe2.situation in (?, ?)
                 and oe2.situation_changed_at is not null
             )', $resolvedSituations)
-            ->with('order.client')
             ->get()
             // Empate exato de situation_changed_at entre duas OS's do mesmo equipamento (raro) —
             // a subquery pode devolver mais de uma linha; só precisamos de uma.
@@ -72,8 +63,6 @@ class CheckEquipmentRevisionsCommand extends Command
                 'equipment_id' => $equipment->equipment_id,
                 'order_id' => $equipment->order_id,
                 'base_date' => $equipment->situation_changed_at->toISOString(),
-                'order_number' => $equipment->order->number,
-                'client_name' => $equipment->order->client?->name,
             ])
             ->values()
             ->all();

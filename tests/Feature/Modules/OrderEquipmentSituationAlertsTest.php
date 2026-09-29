@@ -4,14 +4,12 @@ namespace Tests\Feature\Modules;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Modules\Clients\Domain\ClientAggregate;
 use Modules\Clients\Domain\Enums\PersonType;
 use Modules\Equipments\Application\RegisterEquipment;
 use Modules\Identity\Domain\Enums\UserRole;
 use Modules\Identity\Domain\UserAggregate;
-use Modules\Identity\Infrastructure\ReadModels\User;
 use Modules\Orders\Application\AttachEquipmentToOrder;
 use Modules\Orders\Application\ChangeOrderEquipmentSituation;
 use Modules\Orders\Application\CheckEquipmentSituations;
@@ -19,7 +17,6 @@ use Modules\Orders\Application\OpenOrder;
 use Modules\Orders\Domain\Enums\OrderEquipmentSituation;
 use Modules\Orders\Domain\Enums\OrderStatus;
 use Modules\Orders\Domain\OrderAggregate;
-use Modules\Orders\Infrastructure\Mail\OrderEquipmentSituationMail;
 use Modules\Orders\Infrastructure\ReadModels\Order;
 use Modules\Orders\Infrastructure\ReadModels\OrderEquipment;
 use Tests\TestCase;
@@ -86,35 +83,15 @@ class OrderEquipmentSituationAlertsTest extends TestCase
         return [$order, $equipment];
     }
 
-    /**
-     * @return list<string>
-     */
-    private function recipientEmails(): array
+    public function test_claims_a_milestone_when_the_threshold_is_reached(): void
     {
-        return User::whereIn('role', [UserRole::Administrative->value, UserRole::GeneralAdmin->value])
-            ->pluck('email')
-            ->all();
-    }
-
-    public function test_sends_alert_at_a_milestone_to_administrative_and_general_admin_but_not_technician(): void
-    {
-        Mail::fake();
-
-        $technician = User::findOrFail($this->aUserId(UserRole::Technician, 'tecnico@medfusion.example'));
-        $administrative = User::findOrFail($this->aUserId(UserRole::Administrative, 'administrativo@medfusion.example'));
-        $generalAdmin = User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
-
         [, $equipment] = $this->anOrderWithOneEquipment();
 
         $this->travel(8)->days();
 
-        $sent = app(CheckEquipmentSituations::class)($this->recipientEmails());
+        $claimed = app(CheckEquipmentSituations::class)();
 
-        $this->assertSame(1, $sent);
-        Mail::assertSent(OrderEquipmentSituationMail::class, $administrative->email);
-        Mail::assertSent(OrderEquipmentSituationMail::class, $generalAdmin->email);
-        Mail::assertNotSent(OrderEquipmentSituationMail::class, $technician->email);
-
+        $this->assertSame(1, $claimed);
         $this->assertDatabaseHas('order_equipment_situation_alerts', [
             'order_id' => $equipment->order_id,
             'equipment_id' => $equipment->equipment_id,
@@ -123,43 +100,32 @@ class OrderEquipmentSituationAlertsTest extends TestCase
         ]);
     }
 
-    public function test_does_not_resend_the_same_milestone_on_a_second_run(): void
+    public function test_does_not_reclaim_the_same_milestone_on_a_second_run(): void
     {
-        Mail::fake();
-
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         $this->anOrderWithOneEquipment();
 
         $this->travel(8)->days();
 
-        $emails = $this->recipientEmails();
-        app(CheckEquipmentSituations::class)($emails);
-        $secondRunSent = app(CheckEquipmentSituations::class)($emails);
+        app(CheckEquipmentSituations::class)();
+        $secondRunClaimed = app(CheckEquipmentSituations::class)();
 
-        $this->assertSame(0, $secondRunSent);
-        Mail::assertSentTimes(OrderEquipmentSituationMail::class, 1);
+        $this->assertSame(0, $secondRunClaimed);
+        $this->assertDatabaseCount('order_equipment_situation_alerts', 1);
     }
 
     public function test_does_not_alert_before_the_first_milestone(): void
     {
-        Mail::fake();
-
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         $this->anOrderWithOneEquipment();
 
         $this->travel(3)->days();
 
-        $sent = app(CheckEquipmentSituations::class)($this->recipientEmails());
+        $claimed = app(CheckEquipmentSituations::class)();
 
-        $this->assertSame(0, $sent);
-        Mail::assertNothingSent();
+        $this->assertSame(0, $claimed);
     }
 
     public function test_changing_situation_resets_the_stalled_count(): void
     {
-        Mail::fake();
-
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         [, $equipment] = $this->anOrderWithOneEquipment();
 
         $this->travel(8)->days();
@@ -169,27 +135,22 @@ class OrderEquipmentSituationAlertsTest extends TestCase
         // in_analysis não valem mais pra awaiting_part.
         app(ChangeOrderEquipmentSituation::class)($equipment->order_id, [$equipment->id], OrderEquipmentSituation::AwaitingPart);
 
-        $sent = app(CheckEquipmentSituations::class)($this->recipientEmails());
+        $claimed = app(CheckEquipmentSituations::class)();
 
-        $this->assertSame(0, $sent);
-        Mail::assertNothingSent();
+        $this->assertSame(0, $claimed);
     }
 
     public function test_a_resolved_equipment_does_not_alert(): void
     {
-        Mail::fake();
-
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         [, $equipment] = $this->anOrderWithOneEquipment();
 
         app(ChangeOrderEquipmentSituation::class)($equipment->order_id, [$equipment->id], OrderEquipmentSituation::Completed);
 
         $this->travel(20)->days();
 
-        $sent = app(CheckEquipmentSituations::class)($this->recipientEmails());
+        $claimed = app(CheckEquipmentSituations::class)();
 
-        $this->assertSame(0, $sent);
-        Mail::assertNothingSent();
+        $this->assertSame(0, $claimed);
     }
 
     /**
@@ -198,9 +159,6 @@ class OrderEquipmentSituationAlertsTest extends TestCase
      */
     public function test_external_repair_also_alerts(): void
     {
-        Mail::fake();
-
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         [, $equipment] = $this->anOrderWithOneEquipment();
 
         app(ChangeOrderEquipmentSituation::class)($equipment->order_id, [$equipment->id], OrderEquipmentSituation::ExternalRepair);
@@ -210,25 +168,22 @@ class OrderEquipmentSituationAlertsTest extends TestCase
         // Numa tacada só, 15 dias depois, pega os dois marcos (7 e 15) — mesma lógica de
         // recuperar marcos perdidos do CheckStalledOrders. No cron diário real, cada marco
         // dispara no seu próprio dia.
-        $sent = app(CheckEquipmentSituations::class)($this->recipientEmails());
+        $claimed = app(CheckEquipmentSituations::class)();
 
-        $this->assertSame(2, $sent);
+        $this->assertSame(2, $claimed);
     }
 
     /**
      * Regressão: order_equipment_id troca a cada PUT na OS (api#149) — o rastro de idempotência
      * precisa sobreviver a isso chaveando por equipment_id do catálogo, não pela linha efêmera.
      */
-    public function test_editing_the_order_does_not_resend_an_already_sent_milestone(): void
+    public function test_editing_the_order_does_not_reclaim_an_already_claimed_milestone(): void
     {
-        Mail::fake();
-
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         [$order, $equipment] = $this->anOrderWithOneEquipment();
 
         $this->travel(8)->days();
-        app(CheckEquipmentSituations::class)($this->recipientEmails());
-        Mail::assertSentTimes(OrderEquipmentSituationMail::class, 1);
+        app(CheckEquipmentSituations::class)();
+        $this->assertDatabaseCount('order_equipment_situation_alerts', 1);
 
         // Mesmo efeito de um PUT /orders/{id}: limpa e reanexa o mesmo equipamento do catálogo,
         // preservando situation/situation_changed_at (OrderController::resolveEquipments).
@@ -239,10 +194,10 @@ class OrderEquipmentSituationAlertsTest extends TestCase
             $equipment->situation, $equipment->situation_changed_at->toISOString(),
         );
 
-        $secondRunSent = app(CheckEquipmentSituations::class)($this->recipientEmails());
+        $secondRunClaimed = app(CheckEquipmentSituations::class)();
 
-        $this->assertSame(0, $secondRunSent);
-        Mail::assertSentTimes(OrderEquipmentSituationMail::class, 1);
+        $this->assertSame(0, $secondRunClaimed);
+        $this->assertDatabaseCount('order_equipment_situation_alerts', 1);
     }
 
     /**
@@ -251,9 +206,6 @@ class OrderEquipmentSituationAlertsTest extends TestCase
      */
     public function test_an_equipment_without_a_catalog_link_does_not_alert(): void
     {
-        Mail::fake();
-
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         $order = app(OpenOrder::class)(
             1402, '2026-09-08', $this->aClientId(), $this->aUserId(),
             false, false, false, false, false, null, null, null, null, null, null, null,
@@ -262,10 +214,9 @@ class OrderEquipmentSituationAlertsTest extends TestCase
 
         $this->travel(20)->days();
 
-        $sent = app(CheckEquipmentSituations::class)($this->recipientEmails());
+        $claimed = app(CheckEquipmentSituations::class)();
 
-        $this->assertSame(0, $sent);
-        Mail::assertNothingSent();
+        $this->assertSame(0, $claimed);
     }
 
     /**
@@ -274,18 +225,14 @@ class OrderEquipmentSituationAlertsTest extends TestCase
      */
     public function test_an_equipment_on_a_canceled_order_does_not_alert(): void
     {
-        Mail::fake();
-
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         [$order] = $this->anOrderWithOneEquipment();
         OrderAggregate::retrieve($order->id)->changeStatus(OrderStatus::Canceled)->persist();
 
         $this->travel(20)->days();
 
-        $sent = app(CheckEquipmentSituations::class)($this->recipientEmails());
+        $claimed = app(CheckEquipmentSituations::class)();
 
-        $this->assertSame(0, $sent);
-        Mail::assertNothingSent();
+        $this->assertSame(0, $claimed);
     }
 
     /**
@@ -294,9 +241,6 @@ class OrderEquipmentSituationAlertsTest extends TestCase
      */
     public function test_an_equipment_on_a_partially_completed_order_still_alerts(): void
     {
-        Mail::fake();
-
-        User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
         $clientId = $this->aClientId();
         $order = app(OpenOrder::class)(
             1401, '2026-09-08', $clientId, $this->aUserId(),
@@ -320,22 +264,19 @@ class OrderEquipmentSituationAlertsTest extends TestCase
 
         $this->travel(8)->days();
 
-        $sent = app(CheckEquipmentSituations::class)($this->recipientEmails());
+        $claimed = app(CheckEquipmentSituations::class)();
 
-        $this->assertSame(1, $sent);
+        $this->assertSame(1, $claimed);
     }
 
-    public function test_command_resolves_recipients_and_delegates_to_the_action(): void
+    public function test_command_claims_milestones(): void
     {
-        Mail::fake();
-
-        $generalAdmin = User::findOrFail($this->aUserId(UserRole::GeneralAdmin, 'admingeral@medfusion.example'));
-        $this->anOrderWithOneEquipment();
+        [, $equipment] = $this->anOrderWithOneEquipment();
 
         $this->travel(8)->days();
 
         $this->artisan('orders:check-equipment-situations')->assertSuccessful();
 
-        Mail::assertSent(OrderEquipmentSituationMail::class, $generalAdmin->email);
+        $this->assertDatabaseHas('order_equipment_situation_alerts', ['equipment_id' => $equipment->equipment_id]);
     }
 }

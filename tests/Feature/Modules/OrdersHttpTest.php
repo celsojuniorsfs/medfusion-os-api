@@ -94,6 +94,19 @@ class OrdersHttpTest extends TestCase
         ];
     }
 
+    /**
+     * api#140 — atalho pra chegar em `approved` (open → in_analysis → awaiting_approval →
+     * approved), a tabela de transições não tem um caminho mais curto.
+     */
+    private function approveOrder(User $user, string $orderId): void
+    {
+        foreach (['in_analysis', 'awaiting_approval', 'approved'] as $status) {
+            $this->actingAs($user, 'sanctum')
+                ->patchJson("/api/v1/orders/{$orderId}/status", ['status' => $status])
+                ->assertOk();
+        }
+    }
+
     public function test_guests_cannot_access_the_next_number_endpoint(): void
     {
         $this->getJson('/api/v1/orders/next-number')->assertStatus(401);
@@ -801,6 +814,285 @@ class OrdersHttpTest extends TestCase
         $this->actingAs($this->authenticatedUser(), 'sanctum')
             ->patchJson('/api/v1/orders/'.Str::uuid().'/status', ['status' => 'in_analysis'])
             ->assertStatus(404);
+    }
+
+    public function test_completing_one_of_several_equipments_moves_the_order_to_partially_completed(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['equipments'] = [
+            ['name' => 'Monitor'],
+            ['name' => 'Bomba de infusão'],
+            ['name' => 'Mesa cirúrgica'],
+        ];
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload)->json('data');
+        $this->approveOrder($user, $created['id']);
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/situation",
+            ['order_equipment_ids' => [$created['equipments'][0]['id']], 'situation' => 'completed'],
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('data.status', 'partially_completed');
+        $response->assertJsonPath('data.equipments.0.situation', 'completed');
+        $response->assertJsonPath('data.equipments.1.situation', 'in_analysis');
+    }
+
+    public function test_completing_the_last_pending_equipment_completes_the_order(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['equipments'] = [['name' => 'Monitor'], ['name' => 'Bomba de infusão']];
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload)->json('data');
+        $this->approveOrder($user, $created['id']);
+        $ids = array_column($created['equipments'], 'id');
+
+        $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/situation",
+            ['order_equipment_ids' => [$ids[0]], 'situation' => 'completed'],
+        )->assertJsonPath('data.status', 'partially_completed');
+
+        // Devolvido sem reparo também conta como resolvido — não precisa ser "completed" nos dois.
+        $response = $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/situation",
+            ['order_equipment_ids' => [$ids[1]], 'situation' => 'returned_unrepaired'],
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('data.status', 'completed');
+    }
+
+    public function test_batch_changing_situation_updates_several_equipments_at_once(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['equipments'] = [['name' => 'Monitor'], ['name' => 'Bomba de infusão'], ['name' => 'Mesa cirúrgica']];
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload)->json('data');
+        $ids = array_column($created['equipments'], 'id');
+
+        // Sem aprovar a OS — a situação do equipamento é independente do status da OS (api#140),
+        // só a derivação de status é que só age em approved/partially_completed/warranty_repair.
+        $response = $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/situation",
+            ['order_equipment_ids' => [$ids[0], $ids[1]], 'situation' => 'awaiting_part'],
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('data.status', 'open');
+        $response->assertJsonPath('data.equipments.0.situation', 'awaiting_part');
+        $response->assertJsonPath('data.equipments.1.situation', 'awaiting_part');
+        $response->assertJsonPath('data.equipments.2.situation', 'in_analysis');
+    }
+
+    public function test_manually_completing_an_order_with_a_pending_equipment_is_rejected(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['equipments'] = [['name' => 'Monitor'], ['name' => 'Bomba de infusão']];
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload)->json('data');
+        $this->approveOrder($user, $created['id']);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->patchJson("/api/v1/orders/{$created['id']}/status", ['status' => 'completed']);
+
+        $response->assertStatus(422);
+        $response->assertJsonStructure(['message', 'errors' => ['status']]);
+    }
+
+    /**
+     * `partially_completed` só é alcançável pela derivação automática (api#140) — uma tentativa
+     * manual de PATCH /status pra ele é rejeitada mesmo estando na tabela de transições
+     * (OrderStatus::isAutomaticOnlyTransition()).
+     */
+    public function test_manually_moving_to_partially_completed_is_rejected(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $created = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId))
+            ->json('data');
+        $this->approveOrder($user, $created['id']);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->patchJson("/api/v1/orders/{$created['id']}/status", ['status' => 'partially_completed']);
+
+        $response->assertStatus(422);
+    }
+
+    public function test_changing_equipment_situation_on_a_canceled_order_is_rejected(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $created = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId))
+            ->json('data');
+        $this->actingAs($user, 'sanctum')
+            ->patchJson("/api/v1/orders/{$created['id']}/status", ['status' => 'canceled'])
+            ->assertOk();
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/situation",
+            ['order_equipment_ids' => [$created['equipments'][0]['id']], 'situation' => 'completed'],
+        );
+
+        $response->assertStatus(409);
+    }
+
+    public function test_changing_situation_with_an_equipment_id_from_another_order_is_rejected(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $orderA = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId, 1401))
+            ->json('data');
+        $orderB = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId, 1402))
+            ->json('data');
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$orderA['id']}/equipments/situation",
+            ['order_equipment_ids' => [$orderB['equipments'][0]['id']], 'situation' => 'completed'],
+        );
+
+        $response->assertStatus(422);
+    }
+
+    /**
+     * Cenário do #140: reabrir em garantia volta só o equipamento com retrabalho — os outros
+     * continuam completed, e a OS só volta pra completed quando ele também resolver de novo.
+     */
+    public function test_reopening_one_equipment_under_warranty_keeps_the_order_in_warranty_repair_until_it_completes_again(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['equipments'] = [['name' => 'Monitor'], ['name' => 'Bomba de infusão']];
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload)->json('data');
+        $ids = array_column($created['equipments'], 'id');
+        $this->approveOrder($user, $created['id']);
+
+        $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/situation",
+            ['order_equipment_ids' => $ids, 'situation' => 'completed'],
+        )->assertJsonPath('data.status', 'completed');
+
+        $this->actingAs($user, 'sanctum')
+            ->patchJson("/api/v1/orders/{$created['id']}/status", ['status' => 'warranty_repair'])
+            ->assertJsonPath('data.status', 'warranty_repair');
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/situation",
+            ['order_equipment_ids' => [$ids[0]], 'situation' => 'in_analysis'],
+        );
+        $response->assertOk();
+        // Não volta sozinho pra approved/partially_completed — warranty_repair com pendente
+        // fica parado até o retrabalho resolver.
+        $response->assertJsonPath('data.status', 'warranty_repair');
+        $response->assertJsonPath('data.equipments.0.situation', 'in_analysis');
+        $response->assertJsonPath('data.equipments.1.situation', 'completed');
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/situation",
+            ['order_equipment_ids' => [$ids[0]], 'situation' => 'completed'],
+        );
+        $response->assertOk();
+        $response->assertJsonPath('data.status', 'completed');
+    }
+
+    /**
+     * `UpdateOrder` limpa e reanexa os equipamentos (clearEquipments()) — a situação e a data de
+     * conclusão precisam sobreviver, casando por equipment_id (api#140), e a posição continua
+     * seguindo a ordem do payload novo.
+     */
+    public function test_editing_an_order_preserves_equipment_situation_completed_at_and_position(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $monitorId = $this->anEquipmentId($clientId, 'Monitor');
+        $pumpId = $this->anEquipmentId($clientId, 'Bomba de infusão');
+
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            ...$this->minimalOrderPayload($clientId),
+            'equipments' => [['equipment_id' => $monitorId], ['equipment_id' => $pumpId]],
+        ])->json('data');
+
+        $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/situation",
+            ['order_equipment_ids' => [$created['equipments'][0]['id']], 'situation' => 'completed'],
+        )->assertOk();
+
+        $before = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders/{$created['id']}")->json('data');
+        $completedAtBefore = $before['equipments'][0]['completed_at'];
+        $this->assertNotNull($completedAtBefore);
+
+        // Mesmos dois equipamentos, na mesma ordem, com equipment_id — o jeito que o frontend
+        // reenvia ao editar (ver OrderEquipmentResource). A linha order_equipments é recriada do
+        // zero (clearEquipments()+reattach), mas a situação não pode se perder.
+        $response = $this->actingAs($user, 'sanctum')->putJson("/api/v1/orders/{$created['id']}", [
+            'number' => 1337,
+            'date' => '2026-09-13',
+            'client_id' => $clientId,
+            'labor_cost' => 150.0,
+            'equipments' => [['equipment_id' => $monitorId], ['equipment_id' => $pumpId]],
+            'items' => [],
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('data.equipments.0.situation', 'completed');
+        $response->assertJsonPath('data.equipments.0.completed_at', $completedAtBefore);
+        $response->assertJsonPath('data.equipments.0.position', 0);
+        $response->assertJsonPath('data.equipments.1.situation', 'in_analysis');
+        $response->assertJsonPath('data.equipments.1.position', 1);
+    }
+
+    /**
+     * A derivação de status (api#140) tem que rodar de novo depois de editar — não só depois de
+     * PATCH /equipments/situation. Remover o único equipamento ainda pendente numa edição precisa
+     * completar a OS sozinha, mesmo sem nenhuma mudança de situação explícita nesta chamada.
+     */
+    public function test_editing_an_order_removing_the_last_pending_equipment_completes_it_automatically(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $monitorId = $this->anEquipmentId($clientId, 'Monitor');
+        $pumpId = $this->anEquipmentId($clientId, 'Bomba de infusão');
+
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            ...$this->minimalOrderPayload($clientId),
+            'equipments' => [['equipment_id' => $monitorId], ['equipment_id' => $pumpId]],
+        ])->json('data');
+        $this->approveOrder($user, $created['id']);
+
+        $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/situation",
+            ['order_equipment_ids' => [$created['equipments'][0]['id']], 'situation' => 'completed'],
+        )->assertJsonPath('data.status', 'partially_completed');
+
+        // Edita removendo a bomba (ainda pendente) — só sobra o monitor, já concluído.
+        $response = $this->actingAs($user, 'sanctum')->putJson("/api/v1/orders/{$created['id']}", [
+            'number' => 1337,
+            'date' => '2026-09-13',
+            'client_id' => $clientId,
+            'labor_cost' => 150.0,
+            'equipments' => [['equipment_id' => $monitorId]],
+            'items' => [],
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('data.status', 'completed');
     }
 
     public function test_second_identical_listing_is_served_from_cache_without_hitting_the_database(): void

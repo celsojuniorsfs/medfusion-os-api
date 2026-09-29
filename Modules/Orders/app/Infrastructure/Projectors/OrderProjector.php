@@ -6,8 +6,10 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Modules\Orders\Domain\Enums\OrderEquipmentSituation;
 use Modules\Orders\Domain\Events\OrderEquipmentAttached;
 use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
+use Modules\Orders\Domain\Events\OrderEquipmentSituationChanged;
 use Modules\Orders\Domain\Events\OrderItemAdded;
 use Modules\Orders\Domain\Events\OrderItemsCleared;
 use Modules\Orders\Domain\Events\OrderOpened;
@@ -70,6 +72,13 @@ class OrderProjector extends Projector
         // já criou a linha antes de qualquer OrderEquipmentAttached do mesmo agregado rodar.
         $order = Order::findOrFail($event->aggregateRootUuid());
 
+        // position (api#140): ordem de chegada dentro da OS, vira a letra do certificado
+        // (api#61: 0 = A, 1 = B...). Determinística no replay — eventos de um mesmo agregado
+        // sempre reaplicam na ordem original do stream — e volta a contar do zero depois de um
+        // OrderEquipmentsCleared (UpdateOrder limpa a tabela antes de reanexar, ver
+        // onOrderEquipmentsCleared() abaixo), então a edição preserva a ordem do payload novo.
+        $position = OrderEquipment::where('order_id', $event->aggregateRootUuid())->count();
+
         $orderEquipment = OrderEquipment::create([
             // null só em eventos gravados antes de orderEquipmentId existir (replay não-determinístico
             // pra esses casos específicos, igual já era antes desta mudança).
@@ -83,6 +92,13 @@ class OrderProjector extends Projector
             'asset_tag' => $event->assetTag,
             'preventive_maintenance' => $event->preventiveMaintenance ?? $order->preventive_maintenance,
             'calibration' => $event->calibration ?? $order->calibration,
+            // situation/situationChangedAt/completedAt nulos = equipamento novo (não existe
+            // "situação legada" antes da #140 pra recuperar, ao contrário de
+            // preventiveMaintenance/calibration acima) — default in_analysis, sem conclusão.
+            'situation' => $event->situation ?? OrderEquipmentSituation::InAnalysis->value,
+            'situation_changed_at' => $event->situationChangedAt ?? $event->createdAt(),
+            'completed_at' => $event->completedAt,
+            'position' => $position,
         ]);
 
         foreach ($event->accessories as $position => $accessory) {
@@ -92,6 +108,24 @@ class OrderProjector extends Projector
                 'position' => $position,
             ]);
         }
+
+        $this->forgetCache();
+    }
+
+    /**
+     * api#140 — `completed_at` só é preenchida quando `to === completed`; noutra situação fica
+     * null, mesmo que já tivesse valor antes (ex.: reabertura em garantia) — o campo sempre
+     * significa "a última vez que ESTE equipamento foi marcado concluído nesta situação atual",
+     * nunca um histórico velho de uma conclusão anterior à reabertura (útil pra revisão anual,
+     * api#136: a contagem de 12 meses reinicia do retrabalho, não da conclusão original).
+     */
+    public function onOrderEquipmentSituationChanged(OrderEquipmentSituationChanged $event): void
+    {
+        OrderEquipment::whereKey($event->orderEquipmentId)->update([
+            'situation' => $event->to,
+            'situation_changed_at' => $event->createdAt(),
+            'completed_at' => $event->to === OrderEquipmentSituation::Completed->value ? $event->createdAt() : null,
+        ]);
 
         $this->forgetCache();
     }
@@ -124,6 +158,24 @@ class OrderProjector extends Projector
             // pelo mesmo motivo do onOrderOpened acima.
             'status_changed_at' => $event->createdAt(),
         ]);
+
+        // Cascata de compatibilidade (api#140): OS's que viraram completed/warranty_repair ANTES
+        // da situação por equipamento existir não têm OrderEquipmentSituationChanged nenhum no
+        // stream — sem isso, um `event-sourcing:replay` completo deixaria os equipamentos delas
+        // presos em `in_analysis` pra sempre (OrderEquipmentAttached tão antigo não carrega
+        // situação real, o projector usa o default). Pra dado gravado DEPOIS desta mudança isto é
+        // inofensivo: ChangeOrderStatus já recusa completar manualmente com equipamento
+        // pendente, e a transição automática pra completed só ocorre quando todos já estão
+        // resolvidos — não sobra ninguém em in_analysis aqui pra marcar.
+        if (in_array($event->to, ['completed', 'warranty_repair'], true)) {
+            OrderEquipment::where('order_id', $event->aggregateRootUuid())
+                ->whereNotIn('situation', ['completed', 'returned_unrepaired'])
+                ->update([
+                    'situation' => OrderEquipmentSituation::Completed->value,
+                    'situation_changed_at' => $event->createdAt(),
+                    'completed_at' => $event->createdAt(),
+                ]);
+        }
 
         $this->forgetCache();
     }

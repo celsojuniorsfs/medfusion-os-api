@@ -20,6 +20,8 @@ use Modules\Identity\Domain\UserAggregate;
 use Modules\Orders\Application\AddOrderItem;
 use Modules\Orders\Application\AttachEquipmentToOrder;
 use Modules\Orders\Application\OpenOrder;
+use Modules\Orders\Domain\Enums\OrderStatus;
+use Modules\Orders\Domain\OrderAggregate;
 use Modules\Orders\Infrastructure\Projectors\OrderProjector;
 use Modules\Orders\Infrastructure\ReadModels\Order;
 use Spatie\EventSourcing\Facades\Projectionist;
@@ -152,6 +154,64 @@ class EventReplayTest extends TestCase
         ]);
         // 2 acessórios por OS (ver anOrderWithEquipment) x 2 OS's — nada duplicado, nada órfão.
         $this->assertSame(4, DB::table('order_equipment_accessories')->count());
+    }
+
+    /**
+     * api#140 — OS's que chegaram a `completed`/`warranty_repair` usando só `OrderStatusChanged`
+     * (sem nenhum `OrderEquipmentSituationChanged` — o formato de toda OS aberta antes desta
+     * mudança) precisam continuar tendo os equipamentos marcados `completed` depois de um replay
+     * completo, senão ficariam presos em `in_analysis` pra sempre (ver
+     * OrderProjector::onOrderStatusChanged). Usa o agregado direto, não ChangeOrderStatus — essa
+     * Action já recusaria completar com equipamento pendente (a trava que a #140 introduziu),
+     * exatamente o cenário que não existia quando esses dados antigos foram gravados.
+     */
+    public function test_replaying_a_legacy_completed_order_marks_its_equipments_completed(): void
+    {
+        $clientId = $this->aClientId();
+        $userId = $this->aUserId();
+        $equipmentId = $this->anEquipmentId($clientId);
+
+        $order = $this->anOrderWithEquipment($clientId, $userId, $equipmentId);
+
+        OrderAggregate::retrieve($order->id)
+            ->changeStatus(OrderStatus::InAnalysis)
+            ->changeStatus(OrderStatus::AwaitingApproval)
+            ->changeStatus(OrderStatus::Approved)
+            ->changeStatus(OrderStatus::Completed)
+            ->persist();
+
+        $this->assertSame('completed', DB::table('order_equipments')->where('order_id', $order->id)->value('situation'));
+
+        $this->artisan('event-sourcing:replay', ['--force' => true])->assertSuccessful();
+
+        $equipment = DB::table('order_equipments')->where('order_id', $order->id)->first();
+        $this->assertSame('completed', $equipment->situation);
+        $this->assertNotNull($equipment->completed_at);
+    }
+
+    /**
+     * api#140 — `position` (a letra do certificado, api#61) precisa reproduzir a mesma ordem de
+     * chegada depois de um replay do agregado inteiro, não só "alguma" ordem consistente.
+     */
+    public function test_replaying_reconstructs_the_same_equipment_position_order(): void
+    {
+        $clientId = $this->aClientId();
+        $userId = $this->aUserId();
+        $first = $this->anEquipmentId($clientId);
+        $second = $this->anEquipmentId($clientId);
+
+        $order = app(OpenOrder::class)(
+            random_int(1337, 999999), '2026-09-25', $clientId, $userId,
+            false, false, false, false, false, null, null, null, null, null, null, 100.0,
+        );
+        app(AttachEquipmentToOrder::class)($order->id, $first, 'Monitor', null, null, null, null, []);
+        app(AttachEquipmentToOrder::class)($order->id, $second, 'Bomba de infusão', null, null, null, null, []);
+
+        Projectionist::replay(collect([app(OrderProjector::class)]), 0, null, $order->id);
+
+        $positions = DB::table('order_equipments')->where('order_id', $order->id)->pluck('position', 'equipment_id');
+        $this->assertSame(0, $positions[$first]);
+        $this->assertSame(1, $positions[$second]);
     }
 
     /**

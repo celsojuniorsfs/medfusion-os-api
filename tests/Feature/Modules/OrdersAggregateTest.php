@@ -96,6 +96,26 @@ class OrdersAggregateTest extends TestCase
     }
 
     /**
+     * api#140 — sem passar situação explícita (equipamento novo, o caso comum), o projector usa
+     * o default: `in_analysis`, sem `completed_at`.
+     */
+    public function test_attaching_equipment_without_explicit_situation_defaults_to_in_analysis(): void
+    {
+        $orderUuid = (string) Str::uuid();
+
+        OrderAggregate::retrieve($orderUuid)
+            ->open(1354, '2026-09-08', $this->aClientId(), $this->aUserId(), false, false, false, false, false, null, null, null, null, null, null, null)
+            ->attachEquipment((string) Str::uuid(), null, 'Monitor', null, null, null, null, [])
+            ->persist();
+
+        $equipment = Order::with('equipments')->findOrFail($orderUuid)->equipments->first();
+        $this->assertSame('in_analysis', $equipment->situation);
+        $this->assertNotNull($equipment->situation_changed_at);
+        $this->assertNull($equipment->completed_at);
+        $this->assertSame(0, $equipment->position);
+    }
+
+    /**
      * Nem todo equipamento da mesma OS tem calibração (ex.: mesa cirúrgica só tem preventiva,
      * confirmado com o cliente na validação de 28/09/2026) — cada equipamento marca o que é dele,
      * sem contaminar os outros da mesma OS.
@@ -131,6 +151,11 @@ class OrdersAggregateTest extends TestCase
 
         $this->assertNull($event->preventiveMaintenance);
         $this->assertNull($event->calibration);
+        // situation/situationChangedAt/completedAt (api#140) — mesmo raciocínio: campos
+        // acrescentados depois, precisam continuar desserializando payload sem eles.
+        $this->assertNull($event->situation);
+        $this->assertNull($event->situationChangedAt);
+        $this->assertNull($event->completedAt);
     }
 
     /**

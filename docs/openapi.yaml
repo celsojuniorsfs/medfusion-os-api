@@ -839,6 +839,9 @@ paths:
         estado anterior a approved. not_approved só a partir de awaiting_approval.
         warranty_repair só a partir de completed (retrabalho dentro do prazo, mesma OS), e de
         warranty_repair de volta para completed. Tabela completa em api-conventions.md.
+        partially_completed (api#140) nunca é alcançável por aqui — 422, mesma resposta de uma
+        transição fora da tabela — e completed é recusado (422) enquanto sobrar equipamento não
+        resolvido (ver PATCH /orders/{id}/equipments/situation).
       requestBody:
         required: true
         content:
@@ -858,7 +861,60 @@ paths:
                 properties:
                   data: { $ref: "#/components/schemas/Order" }
         "422":
-          description: Transição de status inválida
+          description: >
+            Transição de status inválida, incluindo uma tentativa manual de ir pra
+            partially_completed ou de completar a OS com equipamento pendente (api#140).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationErrorBody" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /orders/{id}/equipments/situation:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    patch:
+      tags: [orders]
+      summary: Muda a situação técnica de um ou mais equipamentos da OS
+      operationId: updateOrderEquipmentsSituation
+      description: >
+        api#140 — situação por equipamento (order_equipments), independente do status da OS. Um
+        id só ou vários de uma vez (marcação em lote, pra OS's com muitos equipamentos). Sem
+        máquina de estados: qualquer situação pode ir pra qualquer outra. Quando o status da OS já
+        depende dos equipamentos (approved/partially_completed/warranty_repair), o status é
+        recalculado sozinho depois desta chamada (ver OrderStatus.description).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order_equipment_ids, situation]
+              properties:
+                order_equipment_ids:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+                  description: id(s) de order_equipments — precisam pertencer a esta OS.
+                situation: { $ref: "#/components/schemas/OrderEquipmentSituation" }
+      responses:
+        "200":
+          description: Situação atualizada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Order" }
+        "409":
+          description: A OS está com um status que não aceita mais edição (canceled/completed/not_approved)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: order_equipment_ids inválido ou não pertence a esta OS
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ValidationErrorBody" }
@@ -1142,10 +1198,13 @@ components:
         awaiting_approval — orçamento sem retorno do cliente, mudança manual do técnico;
         distinto de canceled (que é uma decisão explícita do cliente ou da empresa).
         warranty_repair é uma reabertura especial, só a partir de completed (retrabalho dentro
-        do prazo de garantia, mesma OS) — depois volta a completed. Ver api-conventions.md para
-        a tabela de transições e a correspondência com os termos em português usados com o
-        cliente (aberta, em análise, orçamento externo, aguardando aprovação, aprovada, não
-        aprovado, garantia, concluída, cancelada).
+        do prazo de garantia, mesma OS) — depois volta a completed. partially_completed (api#140)
+        deriva sozinho da situação de cada equipamento (ver OrderEquipmentSnapshot.situation) —
+        nunca alcançável por PATCH /orders/{id}/status manual, mesmo estando na tabela de
+        transições. Ver api-conventions.md para a tabela completa e a correspondência com os
+        termos em português usados com o cliente (aberta, em análise, orçamento externo,
+        aguardando aprovação, aprovada, não aprovado, parcialmente concluída, garantia,
+        concluída, cancelada).
       enum:
         - open
         - in_analysis
@@ -1153,6 +1212,7 @@ components:
         - awaiting_approval
         - approved
         - not_approved
+        - partially_completed
         - warranty_repair
         - completed
         - canceled
@@ -1382,6 +1442,20 @@ components:
               type: array
               items: { $ref: "#/components/schemas/OrderEquipmentAccessory" }
 
+    OrderEquipmentSituation:
+      type: string
+      description: >
+        Situação técnica de UM equipamento dentro da OS (api#140), independente do status da OS
+        — sem máquina de estados, qualquer uma pode ir pra qualquer outra. `completed` e
+        `returned_unrepaired` são as "resolvidas": derivam o status da OS (ver
+        OrderStatus.description) e param a contagem pro alerta por situação (api#147).
+      enum:
+        - in_analysis
+        - awaiting_part
+        - external_repair
+        - completed
+        - returned_unrepaired
+
     OrderEquipmentSnapshot:
       type: object
       description: >
@@ -1391,6 +1465,12 @@ components:
         `GET /orders?equipment_id=X`), mas os demais campos são a cópia congelada.
       required: [accessories]
       properties:
+        id:
+          {
+            type: string,
+            format: uuid,
+            description: "id de order_equipments — usado em PATCH /orders/{id}/equipments/situation (api#140)",
+          }
         equipment_id: { type: ["string", "null"], format: uuid }
         name: { type: string }
         brand: { type: ["string", "null"] }
@@ -1406,6 +1486,24 @@ components:
           {
             type: boolean,
             description: "Manutenção distinta da preventiva, mas sem vencimento próprio: sempre sai na mesma data/mesma OS",
+          }
+        situation: { $ref: "#/components/schemas/OrderEquipmentSituation" }
+        situation_changed_at:
+          {
+            type: string,
+            format: date-time,
+            description: "Última mudança de situação — alimenta o alerta por situação (api#147)",
+          }
+        completed_at:
+          {
+            type: ["string", "null"],
+            format: date-time,
+            description: "Preenchida só enquanto situation = completed; limpa se voltar a ficar pendente (ex.: reabertura em garantia). Base da contagem de 12 meses (api#136).",
+          }
+        position:
+          {
+            type: integer,
+            description: "Ordem de chegada dentro da OS — vira a letra do certificado (api#61: 0 = A, 1 = B...)",
           }
         accessories:
           type: array

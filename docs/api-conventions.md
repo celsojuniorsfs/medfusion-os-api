@@ -110,14 +110,34 @@ parênteses.
 | `in_analysis` | `awaiting_approval` (aguardando aprovação) | orçamento pronto, enviado ao cliente |
 | `awaiting_approval` | `approved` (aprovada) | cliente aceitou |
 | `awaiting_approval` | `not_approved` (não aprovado) | orçamento ficou sem retorno do cliente por tempo suficiente — mudança manual do técnico, sem prazo automático |
-| `approved` | `completed` (concluída) | serviço executado |
+| `approved` | `completed` (concluída) | todos os equipamentos concluídos/devolvidos sem reparo (api#140) |
+| `approved` | `partially_completed` (parcialmente concluída) | pelo menos um equipamento resolvido, outros ainda pendentes — **automático** |
+| `partially_completed` | `completed` | os equipamentos restantes também resolveram |
+| `partially_completed` | `approved` | nenhum equipamento resolvido mais (correção de situação) — **automático** |
 | `open` / `in_analysis` / `external_quote` / `awaiting_approval` | `canceled` (cancelada) | a qualquer momento antes da aprovação, por decisão explícita (cliente não quer mais, ou a empresa decide encerrar) |
-| `completed` | `warranty_repair` (garantia) | retrabalho dentro do prazo de garantia — **mesma OS**, não cria uma nova |
-| `warranty_repair` | `completed` | retrabalho finalizado |
+| `completed` | `warranty_repair` (garantia) | retrabalho dentro do prazo de garantia — **mesma OS**, não cria uma nova; só o equipamento com retrabalho volta pra `in_analysis` (api#140), os outros continuam `completed` |
+| `warranty_repair` | `completed` | o equipamento reaberto também resolveu de novo |
 
 `completed` (fora do prazo de garantia), `canceled` e `not_approved` são os únicos estados sem
 saída. A reabertura por `warranty_repair` existe justamente para a empresa medir quantos
 retrabalhos aconteceram num período, sem perder o vínculo com a OS original.
+
+### Situação por equipamento e status "Parcialmente concluída" (api#140)
+
+Cada equipamento da OS (`order_equipments`) tem uma situação técnica própria, independente do
+status da OS: `in_analysis` (padrão), `awaiting_part`, `external_repair`, `completed`,
+`returned_unrepaired`. Sem máquina de estados — qualquer uma pode ir pra qualquer outra
+(`PATCH /orders/{id}/equipments/situation`, aceita um id ou vários de uma vez).
+
+O status da OS **deriva** da situação dos equipamentos, mas só quando já está em `approved`,
+`partially_completed` ou `warranty_repair` — nesses três estados a transição pra
+`partially_completed`/`completed` (ou a volta de `partially_completed` pra `approved`) é sempre
+automática, nunca uma escolha manual. `PATCH /orders/{id}/status` recusa com `422` uma tentativa
+manual de ir pra `partially_completed` (a mesma resposta de uma transição fora da tabela acima) e
+recusa completar manualmente (`completed`) enquanto sobrar equipamento não resolvido.
+
+`partially_completed` não entra na escada de alerta de "OS parada" (api#135) — os equipamentos
+pendentes têm alerta próprio (api#147).
 
 `not_approved` existe separado de `canceled` porque, na prática, são causas diferentes: um
 orçamento pode ficar meses sem resposta do cliente (o caso de `not_approved`, que a empresa quer
@@ -352,6 +372,9 @@ português — ex.: `reported_defect` guarda o texto "Equipamento sem funções 
 | Validade da proposta | `proposal_validity` | `orders` |
 | Valor da mão de obra | `labor_cost` | `orders` |
 | Nº do certificado | `certificate_number` | `orders` |
+| Situação (do equipamento na OS) | `situation` | `order_equipments` |
+| Posição (letra do certificado, api#61) | `position` | `order_equipments` |
+| Data de conclusão (do equipamento) | `completed_at` | `order_equipments` |
 | Quantidade | `quantity` | `order_items` |
 | Descrição | `description` | `order_items` |
 | Valor unitário | `unit_price` | `order_items` |

@@ -2,6 +2,7 @@
 
 namespace Modules\Orders\Presentation\Http\Controllers;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -11,12 +12,16 @@ use Modules\Equipments\Application\RegisterEquipment;
 use Modules\Equipments\Infrastructure\ReadModels\Equipment;
 use Modules\Orders\Application\AddOrderItem;
 use Modules\Orders\Application\AttachEquipmentToOrder;
+use Modules\Orders\Application\ChangeOrderEquipmentSituation;
 use Modules\Orders\Application\ChangeOrderStatus;
+use Modules\Orders\Application\DeriveOrderStatusFromEquipments;
 use Modules\Orders\Application\OpenOrder;
 use Modules\Orders\Application\OrderService;
 use Modules\Orders\Application\UpdateOrder;
+use Modules\Orders\Domain\Enums\OrderEquipmentSituation;
 use Modules\Orders\Domain\Enums\OrderStatus;
 use Modules\Orders\Infrastructure\ReadModels\Order;
+use Modules\Orders\Infrastructure\ReadModels\OrderEquipment;
 use Modules\Orders\Presentation\Http\Requests\OrderRequest;
 use Modules\Orders\Presentation\Http\Resources\OrderResource;
 
@@ -151,16 +156,28 @@ class OrderController
      * uma OS cancelada/concluída/reprovada não deve mais ser editada (ver CLAUDE.md § Recusar uma
      * remoção: cheque ANTES, nunca pelo erro do banco).
      */
-    public function update(OrderRequest $request, string $id, OrderService $orderService, UpdateOrder $updateOrder): JsonResponse
-    {
-        $order = Order::findOrFail($id);
+    public function update(
+        OrderRequest $request,
+        string $id,
+        OrderService $orderService,
+        UpdateOrder $updateOrder,
+        DeriveOrderStatusFromEquipments $deriveOrderStatus,
+    ): JsonResponse {
+        $order = Order::with('equipments')->findOrFail($id);
 
         $orderService->assertIsEditable($order);
 
+        // Lido ANTES do UpdateOrder rodar (ele limpa e reanexa os equipamentos) — pra situação,
+        // data de conclusão etc. sobreviverem à edição, casando por equipment_id (api#140). Só
+        // entram no mapa os que já têm equipment_id (o único jeito estável de casar entre a lista
+        // antiga e a nova); equipamento sem catálogo associado sempre volta como novo.
+        $previousEquipments = $order->equipments->filter(fn (OrderEquipment $e) => $e->equipment_id !== null)
+            ->keyBy('equipment_id');
+
         $data = $request->validated();
 
-        $order = DB::transaction(function () use ($data, $id, $updateOrder) {
-            $equipments = $this->resolveEquipments($data['equipments'], $data['client_id']);
+        $order = DB::transaction(function () use ($data, $id, $updateOrder, $previousEquipments) {
+            $equipments = $this->resolveEquipments($data['equipments'], $data['client_id'], $previousEquipments);
 
             $updateOrder(
                 $id,
@@ -185,6 +202,34 @@ class OrderController
 
             return Order::findOrFail($id);
         }, self::TRANSACTION_ATTEMPTS);
+
+        // Fora da transação, depois que os equipamentos já foram reanexados: reanexar pode ter
+        // adicionado/removido equipamento concluído e deixado "Parcialmente concluída"
+        // desatualizado (api#140) — mesma derivação de ChangeOrderEquipmentSituation, mas aqui
+        // não há situação nova sendo aplicada, só o efeito colateral da lista ter mudado.
+        $deriveOrderStatus($id);
+
+        return response()->json(['data' => new OrderResource($order->fresh(self::WITH))]);
+    }
+
+    /**
+     * PATCH /orders/{id}/equipments/situation (api#140) — um id só ou vários (marcação em lote,
+     * pedida pelo cliente pros lotes de prefeitura/hospital que chegam a 60 equipamentos).
+     */
+    public function updateEquipmentsSituation(
+        Request $request,
+        string $id,
+        ChangeOrderEquipmentSituation $changeSituation,
+    ): JsonResponse {
+        Order::findOrFail($id);
+
+        $data = $request->validate([
+            'order_equipment_ids' => ['required', 'array', 'min:1'],
+            'order_equipment_ids.*' => ['uuid', Rule::exists('order_equipments', 'id')->where('order_id', $id)],
+            'situation' => ['required', Rule::enum(OrderEquipmentSituation::class)],
+        ]);
+
+        $order = $changeSituation($id, $data['order_equipment_ids'], OrderEquipmentSituation::from($data['situation']));
 
         return response()->json(['data' => new OrderResource($order->fresh(self::WITH))]);
     }
@@ -220,12 +265,16 @@ class OrderController
      * `equipment_id`, busca o cadastro atual pra tirar o snapshot; senão, cadastra um equipamento
      * novo no catálogo do cliente.
      *
+     * $previousEquipments (api#140) — só em edição (PUT): os `OrderEquipment` da OS ANTES desta
+     * chamada, indexados por `equipment_id`, pra situação/data de conclusão sobreviverem ao
+     * clearEquipments()+reattach do UpdateOrder. null em criação (POST) — não existe "anterior".
+     *
      * @param  array<int, array<string, mixed>>  $equipments
      * @return array<int, array<string, mixed>>
      */
-    private function resolveEquipments(array $equipments, string $clientId): array
+    private function resolveEquipments(array $equipments, string $clientId, ?Collection $previousEquipments = null): array
     {
-        return array_map(function (array $entry) use ($clientId) {
+        return array_map(function (array $entry) use ($clientId, $previousEquipments) {
             if (! empty($entry['equipment_id'])) {
                 // 404 (não 403) pra equipamento de outro cliente — sem o where('client_id', ...),
                 // um equipment_id de OUTRO cliente virava 200 de qualquer forma.
@@ -244,6 +293,9 @@ class OrderController
                 );
             }
 
+            /** @var OrderEquipment|null $previous */
+            $previous = $previousEquipments?->get($equipment->id);
+
             return [
                 'equipment_id' => $equipment->id,
                 'name' => $equipment->name,
@@ -254,6 +306,9 @@ class OrderController
                 'accessories' => $entry['accessories'] ?? [],
                 'preventive_maintenance' => $entry['preventive_maintenance'] ?? false,
                 'calibration' => $entry['calibration'] ?? false,
+                'situation' => $previous?->situation,
+                'situation_changed_at' => $previous?->situation_changed_at?->toISOString(),
+                'completed_at' => $previous?->completed_at?->toISOString(),
             ];
         }, $equipments);
     }
@@ -276,6 +331,9 @@ class OrderController
                 $equipment['accessories'],
                 $equipment['preventive_maintenance'],
                 $equipment['calibration'],
+                $equipment['situation'],
+                $equipment['situation_changed_at'],
+                $equipment['completed_at'],
             );
         }
 

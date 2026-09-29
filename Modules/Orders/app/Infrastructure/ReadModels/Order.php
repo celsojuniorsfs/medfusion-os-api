@@ -77,7 +77,10 @@ class Order extends Model
      */
     public function equipments(): HasMany
     {
-        return $this->hasMany(OrderEquipment::class);
+        // orderBy('position') — api#140: sem isso a ordem de retorno não é garantida (achado
+        // como bug de teste flaky na #146), e a posição agora tem significado de negócio (letra
+        // do certificado, api#61).
+        return $this->hasMany(OrderEquipment::class)->orderBy('position');
     }
 
     /**

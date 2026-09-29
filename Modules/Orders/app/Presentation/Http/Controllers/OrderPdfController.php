@@ -24,8 +24,8 @@ class OrderPdfController
         Order::findOrFail($id);
 
         // Uma geração por OS de cada vez: sem o lock, dois cliques simultâneos leem o mesmo
-        // `pdf_path` anterior, os dois apagam só ele, e o PDF do primeiro a terminar fica órfão no
-        // storage pra sempre. `$order` é lido DENTRO do lock pra ver o path gravado pelo anterior.
+        // `pdf_path` anterior e o PDF do primeiro a terminar fica órfão no storage. `$order` é
+        // lido DENTRO do lock pra ver o path gravado pelo anterior.
         return Cache::lock("orders:{$id}:pdf", self::LOCK_SECONDS)->block(self::LOCK_SECONDS, function () use ($id, $recordOrderPdf) {
             $order = Order::with(self::WITH)->findOrFail($id);
 

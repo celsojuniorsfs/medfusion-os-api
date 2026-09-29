@@ -35,24 +35,17 @@ class EquipmentModelProjector extends Projector
         EquipmentModel::whereKey($event->aggregateRootUuid())->delete();
     }
 
-    // Sem Cache::increment aqui, ao contrário dos outros projectors (ver docs/architecture.md
-    // § Cache): a listagem deste catálogo não é cacheada.
-    //
-    // Mas a listagem de EQUIPAMENTOS é, e ela embute o nome/marca/modelo copiado do catálogo — o
-    // aviso que este comentário trazia desde o api#101 ("se um dia entrar um EquipmentModelUpdated,
-    // vai precisar invalidar a listagem de equipamentos") virou realidade no api#109. Quem cuida
-    // disso é o EquipmentProjector, reagindo a EquipmentModelUpdated/Removed do lado de Equipments:
-    // a chave `equipments:cache-version` é de lá, e este módulo não pode conhecer aquele.
+    // Este catálogo não é cacheado (sem Cache::increment, diferente dos outros projectors — ver
+    // docs/architecture.md § Cache). A listagem de EQUIPAMENTOS é cacheada e embute o nome/marca/
+    // modelo copiado daqui; invalidar essa cache é responsabilidade do EquipmentProjector (em
+    // Equipments), reagindo a EquipmentModelUpdated/Removed — este módulo não conhece aquele.
 
     /**
-     * Chamado pelo spatie antes de um `event-sourcing:replay --from=0` (ver Projectionist::replay).
-     * FKs desligadas: `equipments.equipment_model_id` (restrictOnDelete) pertence a Equipments, e
-     * replayar só este projector não pode falhar por causa de outro módulo.
+     * Chamado pelo spatie antes de um `event-sourcing:replay --from=0`. FKs desligadas porque
+     * `equipments.equipment_model_id` (restrictOnDelete) pertence a outro módulo.
      *
-     * $aggregateUuid vem preenchido com `--aggregate-uuid=X` (replay de um agregado só) — o
-     * spatie chama isto de qualquer forma (ver Projectionist::replay), então zerar a tabela
-     * inteira aqui apagaria todo mundo pra reconstruir só um modelo. Só o `where('id', ...)`
-     * some quando o replay é de verdade completo (`$aggregateUuid === null`).
+     * $aggregateUuid vem preenchido em replay de um agregado só; a tabela inteira só é zerada
+     * quando o replay é de fato completo ($aggregateUuid === null).
      */
     public function resetState(?string $aggregateUuid = null): void
     {

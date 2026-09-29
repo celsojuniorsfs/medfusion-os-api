@@ -9,13 +9,10 @@ use Nwidart\Modules\Support\ModuleServiceProvider;
 use Spatie\EventSourcing\Facades\Projectionist;
 
 /**
- * Criar/listar/exibir OS (api #45/#46) além da sugestão de número (api #44) — atualizar/mudar
- * status (api #45, PR 2), PDF e notificação continuam issues à parte. Migrations são
- * descobertas automaticamente pelo pacote (auto-discover.migrations em config/modules.php).
- * Projectors/Reactors NÃO são auto-descobertos (ver config/event-sourcing.php) — cada módulo
- * registra os seus aqui. Comandos artisan também não — o namespace do módulo
- * (Modules\Orders\...) não bate com a convenção padrão (App\Console\Commands) que o Laravel
- * auto-descobre.
+ * Migrations são descobertas automaticamente pelo pacote (auto-discover.migrations em
+ * config/modules.php). Projectors/Reactors NÃO são auto-descobertos (ver
+ * config/event-sourcing.php) — cada módulo registra os seus aqui. Comandos artisan também não:
+ * o namespace do módulo (Modules\Orders\...) não bate com a convenção que o Laravel auto-descobre.
  */
 class OrdersServiceProvider extends ModuleServiceProvider
 {

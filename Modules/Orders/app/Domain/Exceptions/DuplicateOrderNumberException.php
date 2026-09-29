@@ -6,13 +6,8 @@ use DomainException;
 use Illuminate\Http\JsonResponse;
 
 /**
- * Mesmo local/estilo de InvalidOrderStatusTransition. Sem app/Exceptions/Handler neste projeto
- * (sem app/ — decisão de arquitetura já conhecida, ver architecture.md), então a exceção define
- * o próprio render() em vez de precisar de um Handler global novo (mecanismo nativo do Laravel).
- *
- * Mensagem já documentada em api-conventions.md § Formato de erro e openapi.yaml (409 de
- * POST/PUT /orders) — nunca deriva de nenhuma mensagem de validação do framework, que viria em
- * inglês (ver client-form.page.ts no repo web: APP_LOCALE=pt_BR sem lang/pt_BR publicado).
+ * 409, não 422 — não é erro de validação do payload. Mensagem fixa em PT-BR: nunca deriva de
+ * mensagem de validação do framework, que viria em inglês.
  */
 class DuplicateOrderNumberException extends DomainException
 {

@@ -30,17 +30,14 @@ class OrderController
     private const array WITH = ['client', 'user', 'equipments.accessories', 'items'];
 
     /**
-     * O retry de contenção transitória (`ConcurrencyErrorDetector` — "Lock wait timeout"/"database
-     * is locked") só funciona no nível de transação MAIS EXTERNO. `OpenOrder`/`UpdateOrder` abrem a
-     * própria `DB::transaction()` por dentro desta aqui (SAVEPOINT, não uma transação nova) — e
-     * `Illuminate\Database\Concerns\ManagesTransactions::handleTransactionException()` trata
-     * contenção detectada num nível aninhado (`$this->transactions > 1`) como fatal de propósito
-     * (deadlock do MySQL desfaz a transação inteira, não só o savepoint): decrementa o contador e
-     * relança na hora como `DeadlockException`, ignorando `attempts` do `DB::transaction()` interno.
-     * Só o `catch` do `DB::transaction()` MAIS EXTERNO (aqui) roda com `$this->transactions === 1`
-     * de novo depois desse desfazimento, e é aí que `attempts` de fato entra em ação — passar
-     * `attempts` só pro `DB::transaction()` interno de `OpenOrder`/`UpdateOrder` é o mesmo que não
-     * ter retry nenhum, porque na prática (via HTTP) ele nunca roda desaninhado.
+     * O retry de contenção transitória (`ConcurrencyErrorDetector`) só funciona no nível de
+     * transação MAIS EXTERNO. `OpenOrder`/`UpdateOrder` abrem a própria `DB::transaction()` por
+     * dentro desta aqui (SAVEPOINT, não uma transação nova), e
+     * `ManagesTransactions::handleTransactionException()` trata contenção detectada num nível
+     * aninhado como fatal de propósito: relança na hora como `DeadlockException`, ignorando
+     * `attempts` da transação interna. Só o `catch` da transação MAIS EXTERNA (aqui) roda de novo
+     * com `attempts` valendo — passar `attempts` só na transação interna de OpenOrder/UpdateOrder
+     * equivale a não ter retry nenhum, pois via HTTP ela nunca roda desaninhada.
      */
     private const int TRANSACTION_ATTEMPTS = 3;
 
@@ -70,24 +67,18 @@ class OrderController
                     ->when($request->query('status'), fn ($q, $status) => $q->where('status', $status))
                     ->when($request->query('date_from'), fn ($q, $date) => $q->whereDate('date', '>=', $date))
                     ->when($request->query('date_to'), fn ($q, $date) => $q->whereDate('date', '<=', $date))
-                    // "status = 'canceled'" avalia pra 0/1 igual em MySQL e SQLite — ASC (padrão)
-                    // põe as não-canceladas (0) antes das canceladas (1), sem depender de CASE.
-                    // Sem índice composto pra essa expressão (teria que ser numa coluna gerada,
-                    // status/date sozinhos já indexados não ajudam essa ordenação específica) —
-                    // aceito de propósito: filesort numa tabela pequena (app de uso interno) é
-                    // mais barato que a complexidade de manter uma coluna gerada só pra isso.
+                    // "status = 'canceled'" avalia pra 0/1 em MySQL/SQLite — ASC põe as não-
+                    // canceladas antes, sem CASE. Sem índice composto pra essa expressão (aceito
+                    // de propósito: filesort numa tabela pequena é mais barato que manter uma
+                    // coluna gerada só pra isso).
                     ->orderByRaw("status = 'canceled'")
                     ->orderBy('date', 'desc')
-                    // Desempate pra OS's da mesma `date`: sem isso a ordem entre elas vinha
-                    // indefinida do banco (achado com uma OS cancelada aparecendo entre outras
-                    // ativas da mesma data) — created_at garante que a mais nova do grupo vá
-                    // primeiro, de verdade, não só "por sorte" da ordem física das linhas.
+                    // Desempate pra OS's da mesma `date`: sem isso a ordem entre elas fica
+                    // indefinida — created_at garante que a mais nova do grupo vá primeiro.
                     ->orderBy('created_at', 'desc')
-                    // `created_at` tem precisão de segundo — duas OS's criadas no mesmo segundo
-                    // (dois cliques rápidos, import em lote) ainda cairiam na mesma indefinição.
-                    // `id` como último critério fecha isso de vez: não é uma segunda garantia de
-                    // "mais nova primeiro" (uuid não é ordenável por tempo), só garante que a
-                    // ORDEM NÃO MUDA entre uma consulta e outra — o problema original relatado.
+                    // `created_at` só tem precisão de segundo — duas OS's no mesmo segundo ainda
+                    // empatariam. `id` como último critério não ordena por tempo (uuid), só
+                    // garante que a ordem não muda entre uma consulta e outra.
                     ->orderBy('id')
                     ->paginate($perPage);
 
@@ -167,10 +158,9 @@ class OrderController
 
         $orderService->assertIsEditable($order);
 
-        // Lido ANTES do UpdateOrder rodar (ele limpa e reanexa os equipamentos) — pra situação,
-        // data de conclusão etc. sobreviverem à edição, casando por equipment_id (api#140). Só
-        // entram no mapa os que já têm equipment_id (o único jeito estável de casar entre a lista
-        // antiga e a nova); equipamento sem catálogo associado sempre volta como novo.
+        // Lido ANTES do UpdateOrder rodar (ele limpa e reanexa os equipamentos) — pra situação e
+        // data de conclusão sobreviverem à edição, casando por equipment_id (api#140). Só entram
+        // no mapa os que já têm equipment_id; sem catálogo associado sempre volta como novo.
         $previousEquipments = $order->equipments->filter(fn (OrderEquipment $e) => $e->equipment_id !== null)
             ->keyBy('equipment_id');
 
@@ -200,13 +190,10 @@ class OrderController
 
             $this->attachEquipmentsAndItems($id, $equipments, $data['items'] ?? []);
 
-            // Dentro da MESMA transação (achado em code review): reanexar pode ter
-            // adicionado/removido equipamento concluído e deixado "Parcialmente concluída"
-            // desatualizado (api#140) — mesma derivação de ChangeOrderEquipmentSituation, mas
-            // aqui não há situação nova sendo aplicada, só o efeito colateral da lista ter
-            // mudado. Rodar fora da transação deixaria uma janela onde os equipamentos já
-            // reanexados são vistos com o status antigo se esta chamada falhasse depois do
-            // commit; dentro dela, o retry de TRANSACTION_ATTEMPTS também cobre uma falha aqui.
+            // Dentro da MESMA transação: reanexar pode ter adicionado/removido equipamento
+            // concluído e deixado "Parcialmente concluída" desatualizada (api#140). Fora da
+            // transação, uma falha aqui deixaria os equipamentos reanexados vistos com o status
+            // antigo já commitado; dentro dela, o retry de TRANSACTION_ATTEMPTS também cobre isso.
             $deriveOrderStatus($id);
 
             return Order::findOrFail($id);
@@ -270,17 +257,13 @@ class OrderController
      *
      * $previousEquipments (api#140) — só em edição (PUT): os `OrderEquipment` da OS ANTES desta
      * chamada, indexados por `equipment_id`, pra situação/data de conclusão sobreviverem ao
-     * clearEquipments()+reattach do UpdateOrder. null em criação (POST) — não existe "anterior".
+     * clearEquipments()+reattach do UpdateOrder. null em criação — não existe "anterior".
      *
-     * Limitação conhecida (achado em code review): o casamento é por `equipment_id` do
-     * CATÁLOGO, não por `order_equipments.id`. Um equipamento cadastrado implicitamente por esta
-     * OS (ramo `else` abaixo) só preserva a situação numa edição se o payload da edição REENVIAR
-     * o `equipment_id` que o catálogo recebeu na primeira vez (é o que `GET /orders/{id}` sempre
-     * devolve em `equipments.*.equipment_id` — o frontend precisa reenviar, não montar a entrada
-     * do zero). Reenviar sem `equipment_id` (equivalente a "troquei por um equipamento
-     * diferente") cadastra outro equipamento novo e a situação reinicia — comportamento já
-     * existente desde a #45/#134 pro resto do snapshot (nome, marca...), a #140 só herda a mesma
-     * regra pra situação/conclusão.
+     * Limitação conhecida: o casamento é por `equipment_id` do catálogo, não por
+     * `order_equipments.id`. Um equipamento cadastrado implicitamente (ramo `else` abaixo) só
+     * preserva a situação numa edição se o payload REENVIAR o `equipment_id` que
+     * `GET /orders/{id}` devolveu — reenviar sem ele cadastra outro equipamento novo e a
+     * situação reinicia, mesmo comportamento já existente pro resto do snapshot desde #45/#134.
      *
      * @param  array<int, array<string, mixed>>  $equipments
      * @return array<int, array<string, mixed>>
@@ -293,9 +276,8 @@ class OrderController
                 // um equipment_id de OUTRO cliente virava 200 de qualquer forma.
                 $equipment = Equipment::where('client_id', $clientId)->findOrFail($entry['equipment_id']);
             } else {
-                // Um equipamento cadastrado implicitamente aqui entra sem acessório estruturado
-                // no catálogo (o técnico ajusta depois); $entry['accessories'] é uma lista digitada
-                // pra esta OS, sem vínculo com o catálogo — vai só pro snapshot desta OS, abaixo.
+                // Cadastrado implicitamente, sem acessório estruturado no catálogo (o técnico
+                // ajusta depois); $entry['accessories'] é uma lista digitada só pra esta OS.
                 $equipment = app(RegisterEquipment::class)(
                     $clientId,
                     $entry['name'],

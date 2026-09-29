@@ -33,9 +33,8 @@ class IdentityServiceProvider extends ModuleServiceProvider
 
         Projectionist::addProjector(UserProjector::class);
 
-        // Chave por e-mail+IP (não só IP) para não deixar um atacante rotacionar e-mails
-        // livremente nem travar todo mundo atrás do mesmo NAT/proxy por causa de um único e-mail
-        // sob ataque.
+        // Chave por e-mail+IP: evita que um atacante rotacione e-mails livremente e evita travar
+        // todo mundo atrás do mesmo NAT/proxy por causa de um único e-mail sob ataque.
         RateLimiter::for('login', fn ($request) => Limit::perMinute(5)->by(
             Str::lower((string) $request->input('email')).'|'.$request->ip(),
         ));

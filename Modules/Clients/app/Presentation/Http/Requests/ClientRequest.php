@@ -27,10 +27,9 @@ class ClientRequest extends FormRequest
     }
 
     /**
-     * CPF/CNPJ e CEP chegam do frontend com pontuação (é como o usuário digita e vê na tela) —
-     * o banco guarda só dígitos (ver migration de clients), então normaliza antes das regras
-     * rodarem: ValidTaxId, o `unique` de tax_id e o `digits:8` de postal_code já operam sobre o
-     * valor limpo, que é o que chega no Aggregate/evento/read model.
+     * CPF/CNPJ e CEP chegam do frontend com pontuação; o banco guarda só dígitos. Normaliza aqui
+     * antes das regras rodarem, para que ValidTaxId, o `unique` e o `digits:8` já operem sobre o
+     * valor limpo.
      */
     protected function prepareForValidation(): void
     {

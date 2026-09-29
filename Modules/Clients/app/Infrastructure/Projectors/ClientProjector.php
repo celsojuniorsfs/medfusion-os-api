@@ -63,12 +63,8 @@ class ClientProjector extends Projector
     }
 
     /**
-     * Invalida a listagem em cache (ver docs/architecture.md § Cache) incrementando um contador
-     * de versão — não `Cache::tags()->flush()` (achado em produção: operação multi-chave, fonte
-     * conhecida de comportamento inconsistente em Redis/Valkey gerenciado com réplica/cluster).
-     * `increment()` é uma única chave, funciona igual em qualquer topologia. O Projector já é o
-     * único lugar que escreve no read model, então vira também o único lugar que invalida o
-     * cache dele.
+     * Invalida o cache incrementando um contador de versão, não `Cache::tags()->flush()`
+     * (instável em Redis/Valkey gerenciado com réplica/cluster — achado em produção).
      */
     private function forgetCache(): void
     {
@@ -76,15 +72,10 @@ class ClientProjector extends Projector
     }
 
     /**
-     * Chamado pelo spatie antes de um `event-sourcing:replay --from=0` (ver Projectionist::replay)
-     * — sem isso, `onClientRegistered` estoura por `tax_id` duplicado. FKs desligadas: `equipments`
-     * (cascadeOnDelete) e `orders` (restrictOnDelete) apontam pra `clients`, mas pertencem a outros
-     * projectors — replayar só este não pode falhar nem apagar a tabela de outro módulo.
-     *
-     * $aggregateUuid vem preenchido com `--aggregate-uuid=X` (replay de um agregado só) — o
-     * spatie chama isto de qualquer forma (ver Projectionist::replay), então zerar a tabela
-     * inteira aqui apagaria todo mundo pra reconstruir só um cliente. Só o `where('id', ...)`
-     * some quando o replay é de verdade completo (`$aggregateUuid === null`).
+     * Chamado pelo spatie antes de um replay, para limpar a tabela sem estourar `tax_id`
+     * duplicado. FKs desligadas porque `equipments`/`orders` apontam pra `clients` mas pertencem
+     * a outros projectors. Com `--aggregate-uuid=X` (replay de um agregado só), $aggregateUuid
+     * vem preenchido e só aquela linha é apagada — nunca a tabela inteira.
      */
     public function resetState(?string $aggregateUuid = null): void
     {

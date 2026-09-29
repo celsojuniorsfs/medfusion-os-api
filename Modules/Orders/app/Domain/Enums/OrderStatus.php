@@ -3,10 +3,9 @@
 namespace Modules\Orders\Domain\Enums;
 
 /**
- * Tabela de transições fechada na F3 (ver docs/api-conventions.md § Status da OS). O prazo de
- * garantia que limita completed → warranty_repair é uma regra de negócio sobre a data da OS,
- * não sobre o estado em si — fica para quando o comando de mudança de status for implementado
- * de verdade (fora desta sessão), não faz parte da máquina de estados.
+ * Tabela de transições da OS (ver docs/api-conventions.md § Status da OS). O prazo de garantia
+ * que limita completed → warranty_repair é regra de negócio sobre a data da OS, não sobre o
+ * estado em si — não faz parte desta máquina de estados.
  */
 enum OrderStatus: string
 {
@@ -109,12 +108,10 @@ enum OrderStatus: string
     }
 
     /**
-     * Marcos (em dias) do alerta de "OS parada" (api#135), validado com o cliente na rodada 3 do
-     * artefato de alertas. AwaitingApproval tem escada própria e mais longa — prefeitura costuma
-     * demorar mais pra aprovar. Os estados finais (NotApproved, Canceled) e o pós-aprovação
-     * (Completed, WarrantyRepair) não alertam: uma vez lá, não há "parado" a cobrar.
-     * `PartiallyCompleted` também não entra na escada (api#140/S5): os equipamentos pendentes já
-     * têm alerta próprio (api#147).
+     * Marcos (em dias) do alerta de "OS parada" (api#135). AwaitingApproval tem escada própria e
+     * mais longa — prefeitura costuma demorar mais pra aprovar. Estados finais e pós-aprovação
+     * não alertam: uma vez lá, não há "parado" a cobrar. `PartiallyCompleted` também não entra
+     * (api#140): os equipamentos pendentes já têm alerta próprio (api#147).
      *
      * @return list<int>
      */

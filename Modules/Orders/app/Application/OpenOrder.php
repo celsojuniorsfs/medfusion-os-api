@@ -15,17 +15,14 @@ class OpenOrder
 
     /**
      * @throws DuplicateOrderNumberException quando o número já está em uso — pelo pré-check
-     *                                       (caso comum) ou pela constraint `unique` do banco,
-     *                                       capturada dentro da transação (corrida de verdade
-     *                                       entre duas requisições simultâneas). O retry de
-     *                                       contenção transitória mora no `DB::transaction()` MAIS
-     *                                       EXTERNO de quem chama esta Action (ver
-     *                                       `OrderController::TRANSACTION_ATTEMPTS`) — passar
-     *                                       `attempts` aqui não teria efeito, porque a transação
-     *                                       desta Action roda como SAVEPOINT aninhado dentro
-     *                                       daquela, e o Laravel trata contenção detectada num
-     *                                       nível aninhado como fatal de propósito, não como algo
-     *                                       pra tentar de novo isoladamente.
+     *                                       (caso comum) ou pela constraint `unique` do banco
+     *                                       (corrida real entre requisições simultâneas). O
+     *                                       retry de contenção transitória mora no
+     *                                       `DB::transaction()` mais externo do chamador
+     *                                       (`OrderController::TRANSACTION_ATTEMPTS`) — passar
+     *                                       `attempts` aqui não teria efeito, pois esta transação
+     *                                       roda como SAVEPOINT aninhado, e o Laravel trata
+     *                                       contenção nesse nível como fatal de propósito.
      */
     public function __invoke(
         int $number,
@@ -59,10 +56,10 @@ class OpenOrder
                 $paymentMethod, $warrantyPeriod, $proposalValidity, $laborCost,
                 $preventiveMaintenance, $calibration,
             ) {
-                // O OrderProjector roda síncrono, dentro desta mesma transação: se Order::create()
-                // disparar a violação da constraint `unique` de orders.number, o rollback desfaz
-                // também o insert em stored_events (mesma conexão) — sem isso, um
-                // event-sourcing:replay futuro quebraria tentando reprojetar um OrderOpened órfão.
+                // OrderProjector roda síncrono, dentro desta mesma transação: se Order::create()
+                // violar a constraint `unique` de orders.number, o rollback desfaz também o
+                // insert em stored_events — sem isso, um replay futuro reprojetaria um
+                // OrderOpened órfão.
                 OrderAggregate::retrieve($uuid)
                     ->open(
                         $number, $date, $clientId, $userId,

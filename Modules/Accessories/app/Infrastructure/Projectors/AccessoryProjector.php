@@ -29,19 +29,16 @@ class AccessoryProjector extends Projector
         Accessory::whereKey($event->aggregateRootUuid())->delete();
     }
 
-    // Sem Cache::increment aqui: a listagem deste catálogo não é cacheada, e a de equipamentos —
-    // que embute o nome do acessório — pertence a Equipments, módulo acima deste no grafo. Quem
-    // invalida é o EquipmentProjector, reagindo a estes mesmos eventos (ver architecture.md § Cache).
+    // Sem Cache::increment aqui: esta listagem não é cacheada. A de equipamentos (que embute o
+    // nome do acessório) é invalidada pelo EquipmentProjector, reagindo a estes mesmos eventos.
 
     /**
-     * Chamado pelo spatie antes de um `event-sourcing:replay --from=0` (ver Projectionist::replay).
-     * FKs desligadas: `equipment_accessories.accessory_id` (restrictOnDelete) pertence a
-     * Equipments, e replayar só este projector não pode falhar por causa de outro módulo.
+     * Chamado pelo spatie antes de um `event-sourcing:replay` (ver Projectionist::replay). FKs
+     * desligadas porque `equipment_accessories.accessory_id` pertence a Equipments, e replayar
+     * só este projector não pode falhar por causa de outro módulo.
      *
-     * $aggregateUuid vem preenchido com `--aggregate-uuid=X` (replay de um agregado só) — o
-     * spatie chama isto de qualquer forma (ver Projectionist::replay), então zerar a tabela
-     * inteira aqui apagaria todo mundo pra reconstruir só um acessório. Só o `where('id', ...)`
-     * some quando o replay é de verdade completo (`$aggregateUuid === null`).
+     * Com `--aggregate-uuid=X`, $aggregateUuid vem preenchido e só aquela linha é apagada; num
+     * replay completo ($aggregateUuid === null), a tabela inteira é zerada.
      */
     public function resetState(?string $aggregateUuid = null): void
     {

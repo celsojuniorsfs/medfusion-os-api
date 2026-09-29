@@ -5,22 +5,17 @@ namespace Modules\EquipmentModels\Domain\Events;
 use Spatie\EventSourcing\StoredEvents\ShouldBeStored;
 
 /**
- * Este evento atravessa a fronteira do módulo: o EquipmentProjector (de Equipments) reage a ele pra
- * corrigir a cópia de nome/marca/modelo que cada equipamento guarda. É o padrão sancionado em
- * docs/architecture.md — a classe de evento é o contrato público de um módulo, e Equipments pode
- * conhecer EquipmentModels (nunca o contrário).
+ * Evento cruza a fronteira do módulo: o EquipmentProjector (de Equipments) reage a ele para
+ * corrigir a cópia de nome/marca/modelo que cada equipamento guarda — contrato público sancionado
+ * em docs/architecture.md.
  */
 class EquipmentModelUpdated extends ShouldBeStored
 {
     /**
-     * Carrega também o trio ANTERIOR, e isso não é redundância: equipamentos cadastrados antes do
-     * api#101 não têm o vínculo em evento nenhum — ele veio do UPDATE do comando de backfill, e o
-     * EquipmentProjector o re-deriva num replay comparando nome/marca/modelo. Renomear quebraria
-     * essa derivação (o trio deixa de casar), deixando o equipamento legado sem modelo e com o
-     * texto antigo depois de um replay. Com o trio anterior aqui, o handler reencontra quem estava
-     * ligado por derivação.
-     *
-     * Nullable e no fim por compatibilidade, conforme a matriz do CLAUDE.md.
+     * O trio ANTERIOR não é redundância: equipamentos legados sem vínculo direto no evento são
+     * re-derivados pelo EquipmentProjector num replay, comparando nome/marca/modelo. Sem o trio
+     * anterior aqui, renomear quebraria essa derivação. Nullable e no fim por compatibilidade
+     * (ver CLAUDE.md).
      */
     public function __construct(
         public readonly string $name,

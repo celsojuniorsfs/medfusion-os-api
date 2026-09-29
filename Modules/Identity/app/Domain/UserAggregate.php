@@ -25,11 +25,8 @@ class UserAggregate extends AggregateRoot
 
     protected function applyUserRegistered(UserRegistered $event): void
     {
-        // Sem estado interno necessário no agregado — nada aqui condiciona comandos futuros.
+        // Sem estado interno necessário no agregado.
     }
 
-    protected function applyUserPasswordChanged(UserPasswordChanged $event): void
-    {
-        //
-    }
+    protected function applyUserPasswordChanged(UserPasswordChanged $event): void {}
 }

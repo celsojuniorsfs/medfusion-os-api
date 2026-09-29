@@ -14,10 +14,9 @@ use Modules\Identity\Database\Factories\UserFactory;
 use Modules\Identity\Domain\Enums\UserRole;
 
 /**
- * Read model do módulo Identity — construído pelo UserProjector a partir dos eventos do
- * UserAggregate. id é o mesmo uuid do agregado (identidade compartilhada agregado/projeção).
+ * Read model construído pelo UserProjector a partir dos eventos do UserAggregate. id é o mesmo
+ * uuid do agregado — por isso entra no fillable.
  */
-// "id" entra no fillable porque o UserProjector cria a linha com o mesmo uuid do agregado.
 #[Fillable(['id', 'name', 'email', 'password', 'role'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
@@ -38,8 +37,7 @@ class User extends Authenticatable
     }
 
     /**
-     * A convenção padrão do HasFactory não resolve o namespace de um model dentro de um módulo
-     * (Modules\Identity\...) — precisa do override explícito.
+     * HasFactory não resolve o namespace de um model dentro de um módulo — precisa de override.
      *
      * @return Factory<User>
      */

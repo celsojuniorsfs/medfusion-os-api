@@ -39,14 +39,12 @@ class ChangeOrderStatus
             ->changeStatus($to)
             ->persist();
 
-        // Achado em code review: um técnico pode marcar todos os equipamentos como resolvidos
-        // ANTES de aprovar a OS (a situação é independente do status, ver S2) — sem isto, a OS
-        // ficaria presa em `approved` até alguém mexer de novo na situação de algum equipamento
-        // e disparar a derivação por outro caminho. Só em `approved`, não em `warranty_repair`:
-        // reabrir em garantia é sempre um fluxo em duas etapas (reabre a OS, DEPOIS marca o
-        // equipamento do retrabalho como pendente) — os outros equipamentos continuam
-        // `completed` nesse meio-tempo de propósito, e derivar aqui devolveria a OS pra
-        // `completed` sozinha antes do segundo passo acontecer.
+        // Um técnico pode marcar todos os equipamentos como resolvidos ANTES de aprovar a OS
+        // (situação é independente do status) — sem isto, a OS ficaria presa em `approved` até
+        // algo mais disparar a derivação. Só em `approved`, não em `warranty_repair`: reabrir em
+        // garantia é um fluxo em duas etapas (reabre a OS, DEPOIS marca o equipamento do
+        // retrabalho como pendente) — os outros continuam `completed` nesse meio-tempo de
+        // propósito, e derivar aqui devolveria a OS sozinha antes do segundo passo.
         if ($to === OrderStatus::Approved) {
             $this->deriveOrderStatus->__invoke($orderId);
         }

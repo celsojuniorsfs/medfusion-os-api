@@ -46,14 +46,11 @@ class OrderProjector extends Projector
             'labor_cost' => $event->laborCost,
             'total' => $event->laborCost ?? 0,
             'status' => 'open',
-            // createdAt() do evento, não now() — senão um event-sourcing:replay reescreveria
-            // toda OS com a hora do replay, e não da abertura de verdade (api#135).
+            // createdAt() do evento, não now() — evita que um replay reescreva a hora de
+            // abertura pela hora do replay (api#135).
             'status_changed_at' => $event->createdAt(),
-            // Vestigiais desde a #146 (preventiva/calibração viraram por equipamento) — a
-            // coluna continua existindo e sendo escrita só pra servir de fallback em
-            // onOrderEquipmentAttached() abaixo, pra OS's abertas antes da #146, cujo
-            // OrderEquipmentAttached não carrega esse valor. Nunca exposta pela API (sumiu de
-            // OrderResource/OrderRequest na #146).
+            // Vestigiais desde a #146 (virou por equipamento) — mantidas só como fallback em
+            // onOrderEquipmentAttached() abaixo para OS's antigas; não expostas pela API.
             'preventive_maintenance' => $event->preventiveMaintenance,
             'calibration' => $event->calibration,
         ]);
@@ -63,33 +60,26 @@ class OrderProjector extends Projector
 
     public function onOrderEquipmentAttached(OrderEquipmentAttached $event): void
     {
-        // null aqui = evento gravado antes da #146, que não carrega esses campos — cai pro
-        // valor legado da OS (coluna vestigial em orders, ver onOrderOpened()/onOrderUpdated()
-        // acima), que já foi projetado antes deste evento na mesma sequência do stream (open/
-        // update sempre precede attachEquipment na mesma OS). Sem esse fallback, um
-        // `event-sourcing:replay` zeraria silenciosamente a marcação de todo equipamento
-        // anexado antes desta mudança — a OS::findOrFail() é segura aqui porque OrderOpened
-        // já criou a linha antes de qualquer OrderEquipmentAttached do mesmo agregado rodar.
+        // null = evento anterior à #146 (não carrega esses campos) — cai pro valor legado da OS
+        // (coluna vestigial em orders, ver onOrderOpened()/onOrderUpdated()). Seguro porque
+        // OrderOpened sempre projeta a linha antes de qualquer OrderEquipmentAttached do mesmo
+        // agregado.
         //
-        // lockForUpdate() (achado em code review): trava a linha de `orders`, não a de
-        // `order_equipments` (que pode não ter nenhuma linha ainda, nada pra travar) — serializa
-        // duas requisições concorrentes anexando equipamento na MESMA OS (double-submit de PUT,
-        // ou uma tentativa de TRANSACTION_ATTEMPTS correndo com outra). Sem isto, o COUNT()
+        // lockForUpdate() trava a linha de `orders`, não a de `order_equipments` — serializa
+        // duas requisições concorrentes anexando equipamento na MESMA OS. Sem isto, o COUNT()
         // abaixo (pra `position`) é um TOCTOU clássico: as duas leriam a mesma contagem antes de
         // qualquer INSERT confirmar, e dois equipamentos acabariam com a mesma posição — a letra
         // do certificado (api#61) deixando de ser única.
         $order = Order::whereKey($event->aggregateRootUuid())->lockForUpdate()->firstOrFail();
 
-        // position (api#140): ordem de chegada dentro da OS, vira a letra do certificado
-        // (api#61: 0 = A, 1 = B...). Determinística no replay — eventos de um mesmo agregado
-        // sempre reaplicam na ordem original do stream — e volta a contar do zero depois de um
-        // OrderEquipmentsCleared (UpdateOrder limpa a tabela antes de reanexar, ver
-        // onOrderEquipmentsCleared() abaixo), então a edição preserva a ordem do payload novo.
+        // position (api#140): ordem de chegada na OS, vira a letra do certificado (api#61: 0 = A,
+        // 1 = B...). Determinística no replay (eventos de um mesmo agregado reaplicam na ordem
+        // original do stream) e reinicia após um OrderEquipmentsCleared.
         $position = OrderEquipment::where('order_id', $event->aggregateRootUuid())->count();
 
         $orderEquipment = OrderEquipment::create([
-            // null só em eventos gravados antes de orderEquipmentId existir (replay não-determinístico
-            // pra esses casos específicos, igual já era antes desta mudança).
+            // null só em eventos anteriores a orderEquipmentId existir — replay desses casos não
+            // é determinístico.
             'id' => $event->orderEquipmentId ?? (string) Str::uuid(),
             'order_id' => $event->aggregateRootUuid(),
             'equipment_id' => $event->equipmentId,
@@ -100,9 +90,8 @@ class OrderProjector extends Projector
             'asset_tag' => $event->assetTag,
             'preventive_maintenance' => $event->preventiveMaintenance ?? $order->preventive_maintenance,
             'calibration' => $event->calibration ?? $order->calibration,
-            // situation/situationChangedAt/completedAt nulos = equipamento novo (não existe
-            // "situação legada" antes da #140 pra recuperar, ao contrário de
-            // preventiveMaintenance/calibration acima) — default in_analysis, sem conclusão.
+            // situation/situationChangedAt/completedAt nulos = equipamento novo, sem "situação
+            // legada" a recuperar — default in_analysis, sem conclusão.
             'situation' => $event->situation ?? OrderEquipmentSituation::InAnalysis->value,
             'situation_changed_at' => $event->situationChangedAt ?? $event->createdAt(),
             'completed_at' => $event->completedAt,
@@ -121,11 +110,10 @@ class OrderProjector extends Projector
     }
 
     /**
-     * api#140 — `completed_at` só é preenchida quando `to === completed`; noutra situação fica
-     * null, mesmo que já tivesse valor antes (ex.: reabertura em garantia) — o campo sempre
-     * significa "a última vez que ESTE equipamento foi marcado concluído nesta situação atual",
-     * nunca um histórico velho de uma conclusão anterior à reabertura (útil pra revisão anual,
-     * api#136: a contagem de 12 meses reinicia do retrabalho, não da conclusão original).
+     * `completed_at` só é preenchida quando `to === completed`; em qualquer outra situação vira
+     * null mesmo que já tivesse valor antes (ex.: reabertura em garantia) — sempre representa a
+     * última conclusão NESTA situação atual, nunca uma conclusão anterior à reabertura (a
+     * contagem de 12 meses da revisão anual reinicia do retrabalho, api#136).
      */
     public function onOrderEquipmentSituationChanged(OrderEquipmentSituationChanged $event): void
     {
@@ -149,9 +137,8 @@ class OrderProjector extends Projector
             'unit_price' => $event->unitPrice,
         ]);
 
-        // total = mão de obra + soma dos itens com valor (unit_price opcional — ver
-        // OrderItem em openapi.yaml). Recalculado a cada item para não duplicar a regra em
-        // dois lugares (create + update).
+        // total = mão de obra + soma dos itens (unit_price é opcional). Recalculado aqui para
+        // não duplicar a regra entre create e update.
         $itemsTotal = $order->items()->selectRaw('COALESCE(SUM(quantity * unit_price), 0) as total')->value('total');
         $order->update(['total' => ($order->labor_cost ?? 0) + $itemsTotal]);
 
@@ -162,19 +149,16 @@ class OrderProjector extends Projector
     {
         Order::whereKey($event->aggregateRootUuid())->update([
             'status' => $event->to,
-            // Reinicia a contagem de dias parada (api#135) — createdAt() do evento, não now(),
-            // pelo mesmo motivo do onOrderOpened acima.
+            // Reinicia a contagem de dias parada (api#135); createdAt() do evento, não now() —
+            // mesmo motivo do onOrderOpened acima.
             'status_changed_at' => $event->createdAt(),
         ]);
 
-        // Cascata de compatibilidade (api#140): OS's que viraram completed/warranty_repair ANTES
-        // da situação por equipamento existir não têm OrderEquipmentSituationChanged nenhum no
-        // stream — sem isso, um `event-sourcing:replay` completo deixaria os equipamentos delas
-        // presos em `in_analysis` pra sempre (OrderEquipmentAttached tão antigo não carrega
-        // situação real, o projector usa o default). Pra dado gravado DEPOIS desta mudança isto é
-        // inofensivo: ChangeOrderStatus já recusa completar manualmente com equipamento
-        // pendente, e a transição automática pra completed só ocorre quando todos já estão
-        // resolvidos — não sobra ninguém em in_analysis aqui pra marcar.
+        // Cascata de compatibilidade (api#140): OS's que viraram completed/warranty_repair antes
+        // da situação por equipamento existir não têm OrderEquipmentSituationChanged no stream —
+        // sem isso, um replay completo deixaria esses equipamentos presos em `in_analysis` para
+        // sempre. Para dados gravados depois desta mudança é inofensivo: ChangeOrderStatus já
+        // recusa completar com equipamento pendente, então não sobra ninguém em in_analysis aqui.
         if (in_array($event->to, ['completed', 'warranty_repair'], true)) {
             OrderEquipment::where('order_id', $event->aggregateRootUuid())
                 ->whereNotIn('situation', ['completed', 'returned_unrepaired'])
@@ -189,9 +173,9 @@ class OrderProjector extends Projector
     }
 
     /**
-     * PUT /orders/{id} (api#45) — sempre disparado antes de OrderEquipmentsCleared/
-     * OrderItemsCleared (ver UpdateOrder), então o total recalculado aqui já reflete o
-     * labor_cost novo; os addItem() que vierem depois incrementam a partir dele.
+     * PUT /orders/{id} — disparado antes de OrderEquipmentsCleared/OrderItemsCleared (ver
+     * UpdateOrder), então o total aqui já reflete o labor_cost novo; addItem() posteriores
+     * incrementam a partir dele.
      */
     public function onOrderUpdated(OrderUpdated $event): void
     {
@@ -252,18 +236,15 @@ class OrderProjector extends Projector
 
     /**
      * Invalida a listagem em cache (ver docs/architecture.md § Cache) incrementando um contador
-     * de versão — não `Cache::tags()->flush()` (achado em produção: operação multi-chave, fonte
-     * conhecida de comportamento inconsistente em Redis/Valkey gerenciado com réplica/cluster).
-     * O Projector já é o único lugar que escreve no read model, então vira também o único lugar
-     * que invalida o cache dele.
+     * de versão — não `Cache::tags()->flush()` (achado em produção: instável em Redis/Valkey
+     * gerenciado com réplica/cluster). Único lugar que escreve no read model, então também o
+     * único que invalida o cache dele.
      *
-     * `DB::afterCommit()`, não incremento direto: desde que `OrderController` passou a rodar com
-     * retry (`TRANSACTION_ATTEMPTS`, api#52), uma tentativa que esbarra em contenção e é
-     * descartada por rollback já pode ter chamado este método antes de falhar — um incremento
-     * direto aqui sobreviveria ao rollback (Cache/Valkey não é desfeito por ROLLBACK do SQL) e
-     * invalidaria o cache uma vez a mais do que o necessário por tentativa perdida.
-     * `afterCommit()` adia pro commit de verdade da transação mais externa (e roda na hora se não
-     * houver transação nenhuma em aberto) — nunca dispara pra uma tentativa que não vingou.
+     * `DB::afterCommit()`, não incremento direto: com o retry de `OrderController`
+     * (`TRANSACTION_ATTEMPTS`, api#52), uma tentativa descartada por rollback já pode ter
+     * chamado este método — um incremento direto sobreviveria ao rollback (cache não é desfeito
+     * por ROLLBACK do SQL) e invalidaria a mais do que o necessário. `afterCommit()` só dispara
+     * no commit real da transação mais externa.
      */
     private function forgetCache(): void
     {
@@ -271,23 +252,20 @@ class OrderProjector extends Projector
     }
 
     /**
-     * Chamado pelo spatie antes de um `event-sourcing:replay --from=0` (ver Projectionist::replay)
-     * — sem isso, `onOrderOpened` estoura por `number` duplicado. Filhos antes do pai
-     * (`order_items`/`order_equipments` referenciam `orders`), FKs desligadas por segurança (não
-     * é estritamente necessário aqui — nenhum outro módulo referencia `orders` — mas mantém o
-     * mesmo padrão dos demais projectors).
+     * Chamado pelo spatie antes de um `event-sourcing:replay --from=0` — sem isso, `onOrderOpened`
+     * estoura por `number` duplicado. Filhos antes do pai (`order_items`/`order_equipments`
+     * referenciam `orders`); FKs desligadas por segurança, mesmo padrão dos demais projectors.
      *
      * $aggregateUuid vem preenchido com `--aggregate-uuid=X` (replay de um agregado só) — o
-     * spatie chama isto de qualquer forma (ver Projectionist::replay), então zerar as tabelas
-     * inteiras aqui apagaria toda OS pra reconstruir só uma. Os filtros por `order_id`/`whereKey`
-     * somem quando o replay é de verdade completo (`$aggregateUuid === null`).
+     * spatie sempre chama este método, então zerar as tabelas inteiras aqui apagaria toda OS
+     * para reconstruir uma só. Os filtros por `order_id`/`whereKey` só somem quando o replay é
+     * completo (`$aggregateUuid === null`).
      */
     public function resetState(?string $aggregateUuid = null): void
     {
         Schema::withoutForeignKeyConstraints(function () use ($aggregateUuid) {
-            // cascadeOnDelete não dispara aqui dentro (FK desligada de propósito) — apaga os
-            // filhos de order_equipments explicitamente antes dele, senão um replay deixaria
-            // order_equipment_accessories órfã apontando pra linhas já apagadas.
+            // cascadeOnDelete não dispara aqui (FK desligada de propósito) — apaga os filhos de
+            // order_equipments antes dele, senão sobra order_equipment_accessories órfã.
             OrderEquipmentAccessory::when(
                 $aggregateUuid !== null,
                 fn ($query) => $query->whereIn(

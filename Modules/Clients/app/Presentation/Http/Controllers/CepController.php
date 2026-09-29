@@ -8,9 +8,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Validator;
 
 /**
- * GET /cep/{cep} — proxy pro ViaCEP (gratuito, sem autenticação) com cache. Consulta a um
- * serviço externo, não estado de domínio nosso — por isso fica fora do padrão event-sourced do
- * resto do módulo, sem invalidação por evento (só o TTL longo).
+ * Proxy pro ViaCEP com cache — consulta serviço externo, por isso fica fora do padrão
+ * event-sourced do resto do módulo (sem invalidação por evento, só TTL longo).
  */
 class CepController
 {
@@ -20,8 +19,7 @@ class CepController
 
         Validator::make(['cep' => $digits], ['cep' => ['required', 'digits:8']])->validate();
 
-        // TTL de 30 dias — dado de referência externo, quase estático. Devolve o mesmo shape do
-        // ViaCEP sem reformatar.
+        // TTL de 30 dias: dado de referência externo, quase estático.
         $data = Cache::remember(
             "cep:{$digits}",
             now()->addDays(30),

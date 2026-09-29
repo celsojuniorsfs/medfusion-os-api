@@ -8,13 +8,10 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Modules\Clients\Domain\Enums\PersonType;
 
 /**
- * Aceita CPF (pessoa física) ou CNPJ (pessoa jurídica) — a maioria dos clientes cadastra com
- * CNPJ e razão social, mas uma parte cadastra em nome próprio, com CPF (feedback do Augusto em
- * 10/09/2026). Desde que `person_type` virou campo explícito do cadastro (10/09/2026), o
- * documento exigido é o do tipo declarado (via DataAwareRule, que dá acesso ao resto do payload)
- * — CPF pra "individual", CNPJ pra "company" — em vez de só adivinhar pelo tamanho. O tamanho
- * ainda decide se `person_type` não vier por algum motivo (defensivo). A pontuação é opcional —
- * a máscara é responsabilidade do frontend, a API valida o que chegar.
+ * Valida CPF (pessoa física) ou CNPJ (pessoa jurídica). O documento exigido segue `person_type`
+ * (via DataAwareRule, que dá acesso ao resto do payload) — decidir só pelo tamanho é fallback
+ * defensivo caso `person_type` não venha. Pontuação é opcional; a máscara é responsabilidade do
+ * frontend.
  */
 class ValidTaxId implements DataAwareRule, ValidationRule
 {

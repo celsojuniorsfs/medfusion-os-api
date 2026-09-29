@@ -16,14 +16,10 @@ class EquipmentModelRequest extends FormRequest
      */
     public function rules(): array
     {
-        // name/brand/model obrigatórios pelo mesmo motivo que já valem em EquipmentRequest desde
-        // o api#92: o técnico às vezes coloca a marca no campo do equipamento por falta de
-        // organização, e um catálogo compartilhado entre todos os clientes fica inútil se as
-        // entradas nascem pela metade.
-        //
-        // Sem `unique` de propósito, mesma decisão já documentada pro nome de Accessory e pro
-        // serial_number de Equipment: o seletor do frontend evita duplicata na prática, oferecendo
-        // o que já existe antes de deixar cadastrar um modelo novo.
+        // name/brand/model obrigatórios: um catálogo compartilhado entre clientes fica inútil se
+        // entradas nascem pela metade. Sem `unique` de propósito (mesma decisão de Accessory.name
+        // e Equipment.serial_number) — o seletor do frontend evita duplicata oferecendo o que já
+        // existe antes de deixar cadastrar um modelo novo.
         return [
             'name' => ['required', 'string', 'max:255'],
             'brand' => ['required', 'string', 'max:255'],

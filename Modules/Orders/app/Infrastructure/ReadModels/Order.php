@@ -24,10 +24,8 @@ use Modules\Identity\Infrastructure\ReadModels\User;
     'payment_method', 'warranty_period', 'proposal_validity',
     'labor_cost', 'total', 'status', 'status_changed_at', 'certificate_number',
     'pdf_path', 'pdf_generated_at',
-    // Vestigiais desde a #146 (preventiva/calibração viraram por equipamento) — não expostos
-    // por OrderResource/OrderRequest, servem só de fallback em
-    // OrderProjector::onOrderEquipmentAttached() pra replay de equipamentos anexados antes
-    // desta mudança. Ver comentário lá.
+    // Vestigiais desde a #146 — fallback em OrderProjector::onOrderEquipmentAttached() para
+    // equipamentos anexados antes da mudança (ver comentário lá); não expostos pela API.
     'preventive_maintenance', 'calibration',
 ])]
 class Order extends Model
@@ -77,9 +75,8 @@ class Order extends Model
      */
     public function equipments(): HasMany
     {
-        // orderBy('position') — api#140: sem isso a ordem de retorno não é garantida (achado
-        // como bug de teste flaky na #146), e a posição agora tem significado de negócio (letra
-        // do certificado, api#61).
+        // orderBy('position'): a posição tem significado de negócio (letra do certificado,
+        // api#61), sem isso a ordem de retorno não é garantida.
         return $this->hasMany(OrderEquipment::class)->orderBy('position');
     }
 

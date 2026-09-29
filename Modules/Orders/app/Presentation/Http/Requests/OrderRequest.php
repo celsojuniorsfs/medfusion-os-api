@@ -58,10 +58,6 @@ class OrderRequest extends FormRequest
             'technical_training' => ['boolean'],
             'on_site_quote' => ['boolean'],
             'rental' => ['boolean'],
-            // Alimenta a contagem de 12 meses até a próxima revisão (medfusion-os-api#136) — por
-            // OS, aplica a todos os equipamentos dela (limitação conhecida, ver #134).
-            'preventive_maintenance' => ['boolean'],
-            'calibration' => ['boolean'],
             'reported_defect' => ['nullable', 'string'],
             'maintenance_plan' => ['nullable', 'string'],
             'notes' => ['nullable', 'string'],
@@ -78,6 +74,11 @@ class OrderRequest extends FormRequest
             'equipments.*.model' => ['nullable', 'string', 'max:255'],
             'equipments.*.serial_number' => ['nullable', 'string', 'max:255'],
             'equipments.*.asset_tag' => ['nullable', 'string', 'max:255'],
+            // Alimenta a contagem de 12 meses até a próxima revisão (medfusion-os-api#136), por
+            // equipamento — corrigido do nível de OS (medfusion-os-api#134) pro de equipamento,
+            // porque nem todo equipamento tem calibração.
+            'equipments.*.preventive_maintenance' => ['boolean'],
+            'equipments.*.calibration' => ['boolean'],
             'equipments.*.accessories' => ['nullable', 'array'],
             'equipments.*.accessories.*.name' => ['required', 'string', 'max:255'],
             'equipments.*.accessories.*.quantity' => ['required', 'integer', 'min:1'],

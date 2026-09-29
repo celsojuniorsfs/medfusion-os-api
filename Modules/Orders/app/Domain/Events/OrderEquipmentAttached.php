@@ -39,6 +39,10 @@ class OrderEquipmentAttached extends ShouldBeStored
         public readonly ?string $assetTag,
         string|array|null $accessories = [],
         public readonly ?string $orderEquipmentId = null,
+        // Por último e com default (api#146) — eventos gravados antes disso não têm essas
+        // chaves; replay usa false, o mesmo default do formulário.
+        public readonly bool $preventiveMaintenance = false,
+        public readonly bool $calibration = false,
     ) {
         $this->accessories = OrderEquipmentAccessories::normalize($accessories);
     }

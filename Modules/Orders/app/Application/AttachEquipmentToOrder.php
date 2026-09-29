@@ -24,11 +24,16 @@ class AttachEquipmentToOrder
         ?string $serialNumber = null,
         ?string $assetTag = null,
         array $accessories = [],
+        bool $preventiveMaintenance = false,
+        bool $calibration = false,
     ): Order {
         $orderEquipmentId = (string) Str::uuid();
 
         OrderAggregate::retrieve($orderId)
-            ->attachEquipment($orderEquipmentId, $equipmentId, $name, $brand, $model, $serialNumber, $assetTag, $accessories)
+            ->attachEquipment(
+                $orderEquipmentId, $equipmentId, $name, $brand, $model, $serialNumber, $assetTag, $accessories,
+                $preventiveMaintenance, $calibration,
+            )
             ->persist();
 
         return Order::findOrFail($orderId);

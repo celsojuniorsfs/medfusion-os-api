@@ -24,6 +24,8 @@ class OrderEquipmentResource extends JsonResource
             'model' => $this->model,
             'serial_number' => $this->serial_number,
             'asset_tag' => $this->asset_tag,
+            'preventive_maintenance' => $this->preventive_maintenance,
+            'calibration' => $this->calibration,
             'accessories' => $this->accessories
                 ->map(fn (OrderEquipmentAccessory $accessory) => [
                     'name' => $accessory->name,

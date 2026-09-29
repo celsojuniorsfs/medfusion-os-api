@@ -20,7 +20,6 @@ use Modules\Identity\Infrastructure\ReadModels\User;
 #[Fillable([
     'id', 'number', 'date', 'client_id', 'user_id',
     'picked_up', 'warranty', 'technical_training', 'on_site_quote', 'rental',
-    'preventive_maintenance', 'calibration',
     'reported_defect', 'maintenance_plan', 'notes',
     'payment_method', 'warranty_period', 'proposal_validity',
     'labor_cost', 'total', 'status', 'status_changed_at', 'certificate_number',
@@ -43,8 +42,6 @@ class Order extends Model
             'technical_training' => 'boolean',
             'on_site_quote' => 'boolean',
             'rental' => 'boolean',
-            'preventive_maintenance' => 'boolean',
-            'calibration' => 'boolean',
             'labor_cost' => 'decimal:2',
             'total' => 'decimal:2',
             'status_changed_at' => 'datetime',

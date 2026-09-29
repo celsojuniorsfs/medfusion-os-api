@@ -10,7 +10,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Modules\Equipments\Infrastructure\ReadModels\Equipment;
 
-#[Fillable(['id', 'order_id', 'equipment_id', 'name', 'brand', 'model', 'serial_number', 'asset_tag'])]
+#[Fillable([
+    'id', 'order_id', 'equipment_id', 'name', 'brand', 'model', 'serial_number', 'asset_tag',
+    'preventive_maintenance', 'calibration',
+])]
 class OrderEquipment extends Model
 {
     use HasFactory, HasUuids;
@@ -22,6 +25,14 @@ class OrderEquipment extends Model
     public $incrementing = false;
 
     protected $keyType = 'string';
+
+    protected function casts(): array
+    {
+        return [
+            'preventive_maintenance' => 'boolean',
+            'calibration' => 'boolean',
+        ];
+    }
 
     /**
      * @return BelongsTo<Order, $this>

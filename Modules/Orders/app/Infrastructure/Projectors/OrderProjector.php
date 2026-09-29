@@ -47,8 +47,6 @@ class OrderProjector extends Projector
             // createdAt() do evento, não now() — senão um event-sourcing:replay reescreveria
             // toda OS com a hora do replay, e não da abertura de verdade (api#135).
             'status_changed_at' => $event->createdAt(),
-            'preventive_maintenance' => $event->preventiveMaintenance,
-            'calibration' => $event->calibration,
         ]);
 
         $this->forgetCache();
@@ -67,6 +65,8 @@ class OrderProjector extends Projector
             'model' => $event->model,
             'serial_number' => $event->serialNumber,
             'asset_tag' => $event->assetTag,
+            'preventive_maintenance' => $event->preventiveMaintenance,
+            'calibration' => $event->calibration,
         ]);
 
         foreach ($event->accessories as $position => $accessory) {
@@ -140,8 +140,6 @@ class OrderProjector extends Projector
             'proposal_validity' => $event->proposalValidity,
             'labor_cost' => $event->laborCost,
             'total' => ($event->laborCost ?? 0) + $itemsTotal,
-            'preventive_maintenance' => $event->preventiveMaintenance,
-            'calibration' => $event->calibration,
         ]);
 
         $this->forgetCache();

@@ -35,6 +35,9 @@ class OrderAggregate extends AggregateRoot
         ?string $warrantyPeriod,
         ?string $proposalValidity,
         ?float $laborCost,
+        // Vestigiais desde a #146: preventiva/calibração passaram a ser por equipamento
+        // (attachEquipment() abaixo). Continuam aqui só porque OrderOpened já foi gravado com
+        // esses campos e não pode perdê-los (CLAUDE.md) — nada mais os alimenta com valor real.
         bool $preventiveMaintenance = false,
         bool $calibration = false,
     ): self {
@@ -61,9 +64,12 @@ class OrderAggregate extends AggregateRoot
         ?string $serialNumber,
         ?string $assetTag,
         array $accessories,
+        bool $preventiveMaintenance = false,
+        bool $calibration = false,
     ): self {
         $this->recordThat(new OrderEquipmentAttached(
             $equipmentId, $name, $brand, $model, $serialNumber, $assetTag, $accessories, $orderEquipmentId,
+            $preventiveMaintenance, $calibration,
         ));
 
         return $this;
@@ -97,6 +103,7 @@ class OrderAggregate extends AggregateRoot
         ?string $warrantyPeriod,
         ?string $proposalValidity,
         ?float $laborCost,
+        // Vestigiais desde a #146 — ver o mesmo comentário em open() acima.
         bool $preventiveMaintenance = false,
         bool $calibration = false,
     ): self {

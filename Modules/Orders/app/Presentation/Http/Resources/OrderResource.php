@@ -32,8 +32,6 @@ class OrderResource extends JsonResource
             'technical_training' => $this->technical_training,
             'on_site_quote' => $this->on_site_quote,
             'rental' => $this->rental,
-            'preventive_maintenance' => $this->preventive_maintenance,
-            'calibration' => $this->calibration,
             'reported_defect' => $this->reported_defect,
             'maintenance_plan' => $this->maintenance_plan,
             'notes' => $this->notes,

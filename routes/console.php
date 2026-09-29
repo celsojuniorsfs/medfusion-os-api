@@ -13,3 +13,6 @@ Artisan::command('inspire', function () {
 // periodicamente — conferir/configurar isso no painel da Laravel Cloud é passo de implantação
 // separado (ver docs/ambientes.md § Scheduler, a preencher).
 Schedule::command('orders:check-stalled')->daily()->withoutOverlapping();
+
+// api#147 — comando próprio, escada de marcos diferente da de cima.
+Schedule::command('orders:check-equipment-situations')->daily()->withoutOverlapping();

@@ -137,7 +137,12 @@ manual de ir pra `partially_completed` (a mesma resposta de uma transição fora
 recusa completar manualmente (`completed`) enquanto sobrar equipamento não resolvido.
 
 `partially_completed` não entra na escada de alerta de "OS parada" (api#135) — os equipamentos
-pendentes têm alerta próprio (api#147).
+pendentes têm alerta próprio (api#147): `in_analysis`, `awaiting_part` e `external_repair`
+disparam aos 7 e 15 dias sem mudar de situação (comando `orders:check-equipment-situations`,
+mesmo desenho de `orders:check-stalled`, mas com escada fixa e comando separado — ver
+`OrderEquipmentSituation::alertMilestoneDays()`); `completed`/`returned_unrepaired` não alertam, e
+o alerta continua mesmo com a OS `partially_completed`/`warranty_repair` (só some quando a OS
+chega num status final: `canceled`, `not_approved` ou `completed`).
 
 `not_approved` existe separado de `canceled` porque, na prática, são causas diferentes: um
 orçamento pode ficar meses sem resposta do cliente (o caso de `not_approved`, que a empresa quer

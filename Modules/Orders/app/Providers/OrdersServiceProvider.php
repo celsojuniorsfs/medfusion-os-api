@@ -3,6 +3,7 @@
 namespace Modules\Orders\Providers;
 
 use Modules\Orders\Infrastructure\Projectors\OrderProjector;
+use Modules\Orders\Presentation\Console\Commands\CheckEquipmentSituationsCommand;
 use Modules\Orders\Presentation\Console\Commands\CheckStalledOrdersCommand;
 use Nwidart\Modules\Support\ModuleServiceProvider;
 use Spatie\EventSourcing\Facades\Projectionist;
@@ -37,6 +38,7 @@ class OrdersServiceProvider extends ModuleServiceProvider
 
         $this->commands([
             CheckStalledOrdersCommand::class,
+            CheckEquipmentSituationsCommand::class,
         ]);
     }
 }

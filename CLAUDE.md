@@ -12,6 +12,16 @@ entender só lendo o código, ou uma decisão/motivo que não é óbvio a partir
 "porquê", não o "o quê" — o código já diz o que faz). Nada de comentário redundante repetindo o
 que a linha logo abaixo já deixa claro.
 
+Reincidência confirmada (29/09/2026, api#149): mesmo com a regra acima já escrita, voltei a
+comentar quase todo campo novo com uma variação de "null = X, replay-safe" repetida arquivo após
+arquivo — o MESMO padrão já documentado uma vez em `OrderEquipmentAttached`/CLAUDE.md não precisa
+ser reexplicado em cada evento/aggregate/projector novo que o usa de novo. **Documente um padrão
+UMA VEZ, no lugar onde ele nasce** (o primeiro evento a usar "campo novo nullable no fim pra não
+quebrar replay", por exemplo); nos usos seguintes do MESMO padrão, o código sozinho (a posição do
+parâmetro, o nome, o tipo) já é a documentação — no máximo uma referência de uma linha, não a
+explicação inteira de novo. Antes de escrever um comentário, perguntar: "isso já foi explicado em
+algum outro lugar deste PR/módulo?" — se sim, não repetir.
+
 
 
 ## Git neste checkout: `Modules/` pode estar em minúsculas no disco

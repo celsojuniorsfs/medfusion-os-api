@@ -11,9 +11,11 @@ use Modules\Clients\Domain\ClientAggregate;
 use Modules\Clients\Domain\Enums\PersonType;
 use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
+use Modules\Orders\Application\AttachEquipmentToOrder;
 use Modules\Orders\Application\OpenOrder;
 use Modules\Orders\Domain\Events\OrderPdfGenerated;
 use Modules\Orders\Infrastructure\ReadModels\Order;
+use Modules\Orders\Infrastructure\ReadModels\OrderEquipment;
 use Tests\TestCase;
 
 class OrdersPdfHttpTest extends TestCase
@@ -69,6 +71,24 @@ class OrdersPdfHttpTest extends TestCase
         );
     }
 
+    /**
+     * @return list<string> order_equipment_ids, na ordem anexada
+     */
+    private function attachEquipments(string $orderId, int $count): array
+    {
+        $ids = [];
+
+        foreach (range(1, $count) as $n) {
+            app(AttachEquipmentToOrder::class)($orderId, null, "Equipamento {$n}", null, null, null, null, []);
+        }
+
+        foreach (OrderEquipment::where('order_id', $orderId)->orderBy('position')->pluck('id') as $id) {
+            $ids[] = $id;
+        }
+
+        return $ids;
+    }
+
     public function test_guests_cannot_generate_or_read_the_pdf(): void
     {
         $clientId = $this->aClientId();
@@ -76,6 +96,7 @@ class OrdersPdfHttpTest extends TestCase
 
         $this->postJson("/api/v1/orders/{$order->id}/pdf")->assertStatus(401);
         $this->getJson("/api/v1/orders/{$order->id}/pdf")->assertStatus(401);
+        $this->getJson("/api/v1/orders/{$order->id}/pdf/history")->assertStatus(401);
     }
 
     public function test_returns_404_when_reading_the_pdf_of_an_order_that_never_generated_one(): void
@@ -136,7 +157,7 @@ class OrdersPdfHttpTest extends TestCase
         $response->assertJsonStructure(['url', 'generated_at', 'expires_at']);
     }
 
-    public function test_generating_again_deletes_the_previous_file_and_get_points_to_the_newest(): void
+    public function test_generating_again_keeps_the_previous_file_and_get_points_to_the_newest(): void
     {
         $user = $this->authenticatedUser();
         $clientId = $this->aClientId();
@@ -153,8 +174,9 @@ class OrdersPdfHttpTest extends TestCase
         $secondPath = Order::findOrFail($order->id)->pdf_path;
 
         $this->assertNotSame($firstPath, $secondPath);
+        // api#149 — histórico: o arquivo anterior não é mais apagado.
         $disk = Storage::disk(config('filesystems.default'));
-        $disk->assertMissing($firstPath);
+        $disk->assertExists($firstPath);
         $disk->assertExists($secondPath);
 
         $get = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders/{$order->id}/pdf")->assertOk()->json();
@@ -185,5 +207,104 @@ class OrdersPdfHttpTest extends TestCase
         $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/pdf")->assertOk();
 
         $this->get("/api/v1/orders/{$order->id}/pdf/download")->assertForbidden();
+    }
+
+    public function test_generating_a_partial_pdf_records_only_the_included_equipments_and_activates_their_approval(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $order = $this->anOrder($clientId, $user->id);
+        [$first, $second] = $this->attachEquipments($order->id, 2);
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/pdf", [
+            'order_equipment_ids' => [$first],
+        ]);
+
+        $response->assertOk();
+        $this->assertDatabaseHas('order_pdf_equipments', ['name' => 'Equipamento 1']);
+        $this->assertDatabaseMissing('order_pdf_equipments', ['name' => 'Equipamento 2']);
+
+        $equipments = OrderEquipment::where('order_id', $order->id)->get()->keyBy('id');
+        $this->assertSame('awaiting_approval', $equipments[$first]->approval_status);
+        $this->assertNull($equipments[$second]->approval_status);
+    }
+
+    public function test_rejects_an_order_equipment_id_from_another_order_when_generating_a_pdf(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $orderA = $this->anOrder($clientId, $user->id);
+        $orderB = app(OpenOrder::class)(1401, '2026-09-25', $clientId, $user->id, false, false, false, false, false, null, null, null, null, null, null, 100.0);
+        [$otherOrderEquipmentId] = $this->attachEquipments($orderB->id, 1);
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$orderA->id}/pdf", [
+            'order_equipment_ids' => [$otherOrderEquipmentId],
+        ]);
+
+        $response->assertStatus(422);
+    }
+
+    public function test_history_lists_every_pdf_generated_with_a_download_link(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $order = $this->anOrder($clientId, $user->id);
+        [$first] = $this->attachEquipments($order->id, 2);
+
+        $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/pdf", ['order_equipment_ids' => [$first]])->assertOk();
+        $this->travel(1)->second();
+        $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/pdf")->assertOk();
+
+        $response = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders/{$order->id}/pdf/history");
+
+        $response->assertOk();
+        $response->assertJsonCount(2, 'data');
+        $response->assertJsonStructure(['data' => [['id', 'generated_at', 'equipments', 'url', 'expires_at']]]);
+        // Mais recente primeiro (o segundo, sem filtro, incluiu os 2 equipamentos).
+        $response->assertJsonCount(2, 'data.0.equipments');
+        $response->assertJsonCount(1, 'data.1.equipments');
+    }
+
+    /**
+     * api#149 — a garantia central do histórico: order_equipments.id troca a cada edição da OS
+     * (UpdateOrder limpa e reanexa), mas o snapshot em order_pdf_equipments é independente disso.
+     */
+    public function test_history_entry_survives_editing_the_order(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            'number' => 1402,
+            'date' => '2026-09-25',
+            'client_id' => $clientId,
+            'labor_cost' => 150.0,
+            'equipments' => [['name' => 'Monitor']],
+            'items' => [],
+        ])->json('data');
+
+        $equipmentId = $created['equipments'][0]['equipment_id'];
+        $orderEquipmentId = $created['equipments'][0]['id'];
+
+        $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$created['id']}/pdf", [
+            'order_equipment_ids' => [$orderEquipmentId],
+        ])->assertOk();
+
+        $this->actingAs($user, 'sanctum')->putJson("/api/v1/orders/{$created['id']}", [
+            'number' => 1402,
+            'date' => '2026-09-25',
+            'client_id' => $clientId,
+            'labor_cost' => 200.0,
+            'equipments' => [['equipment_id' => $equipmentId]],
+            'items' => [],
+        ])->assertOk();
+
+        $this->assertDatabaseMissing('order_equipments', ['id' => $orderEquipmentId]);
+
+        $response = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders/{$created['id']}/pdf/history");
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data.0.equipments');
+        $response->assertJsonPath('data.0.equipments.0.name', 'Monitor');
     }
 }

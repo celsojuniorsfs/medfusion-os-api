@@ -13,6 +13,7 @@ use Modules\Identity\Domain\UserAggregate;
 use Modules\Identity\Infrastructure\ReadModels\User;
 use Modules\Orders\Application\ChangeOrderStatus;
 use Modules\Orders\Application\OpenOrder;
+use Modules\Orders\Application\RecordOrderPdf;
 use Modules\Orders\Domain\Enums\OrderStatus;
 use Modules\Orders\Domain\Events\OrderEquipmentAttached;
 use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
@@ -1197,5 +1198,157 @@ class OrdersHttpTest extends TestCase
         $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId, 1338));
 
         $this->actingAs($user, 'sanctum')->getJson('/api/v1/orders')->assertJsonCount(2, 'data');
+    }
+
+    public function test_total_includes_general_and_per_equipment_labor_cost_and_items(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['equipments'] = [[
+            'name' => 'Monitor',
+            'labor_cost' => 50.0,
+            'items' => [['quantity' => 2, 'description' => 'Fusível', 'unit_price' => 10.0]],
+        ]];
+        $payload['items'] = [['quantity' => 1, 'description' => 'Taxa de visita', 'unit_price' => 30.0]];
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertCreated();
+        // 150 (geral) + 50 (equipamento) + 2*10 (peça do equipamento) + 1*30 (peça geral) = 250
+        $response->assertJsonPath('data.total', '250.00');
+        $response->assertJsonPath('data.equipments.0.labor_cost', '50.00');
+        $response->assertJsonCount(1, 'data.equipments.0.items');
+        $response->assertJsonPath('data.equipments.0.items.0.description', 'Fusível');
+        $response->assertJsonCount(1, 'data.items');
+        $response->assertJsonPath('data.items.0.description', 'Taxa de visita');
+    }
+
+    public function test_an_order_is_valid_with_only_an_equipment_level_labor_cost(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        unset($payload['labor_cost']);
+        $payload['equipments'] = [['name' => 'Monitor', 'labor_cost' => 80.0]];
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertCreated();
+        $response->assertJsonPath('data.total', '80.00');
+    }
+
+    public function test_approving_one_of_several_equipments_moves_the_order_to_approved(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['equipments'] = [['name' => 'Monitor'], ['name' => 'Bomba de infusão']];
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload)->json('data');
+        $ids = array_column($created['equipments'], 'id');
+
+        // Simula um orçamento já gerado pros dois (sem passar por dompdf) — ativa awaiting_approval.
+        app(RecordOrderPdf::class)($created['id'], 'orders/fake.pdf', now()->toIso8601String(), $ids);
+
+        $this->actingAs($user, 'sanctum')->patchJson("/api/v1/orders/{$created['id']}/status", ['status' => 'in_analysis'])->assertOk();
+        $this->actingAs($user, 'sanctum')->patchJson("/api/v1/orders/{$created['id']}/status", ['status' => 'awaiting_approval'])->assertOk();
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/approval",
+            ['order_equipment_ids' => [$ids[0]], 'approval_status' => 'approved'],
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('data.status', 'approved');
+        $response->assertJsonPath('data.equipments.0.approval_status', 'approved');
+        $response->assertJsonPath('data.equipments.1.approval_status', 'awaiting_approval');
+    }
+
+    /**
+     * A derivação automática (awaiting_approval → approved via equipamento aprovado) não pode
+     * bloquear a aprovação manual da OS inteira — continua sendo o caminho padrão pra quem nunca
+     * usa orçamento parcial.
+     */
+    public function test_manually_approving_the_whole_order_still_works_without_any_equipment_approval(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId))->json('data');
+
+        $this->approveOrder($user, $created['id']);
+
+        $response = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders/{$created['id']}");
+        $response->assertJsonPath('data.status', 'approved');
+        $this->assertNull($response->json('data.equipments.0.approval_status'));
+    }
+
+    public function test_rejecting_one_equipment_does_not_change_the_order_status(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['equipments'] = [['name' => 'Monitor'], ['name' => 'Bomba de infusão']];
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload)->json('data');
+        $ids = array_column($created['equipments'], 'id');
+
+        app(RecordOrderPdf::class)($created['id'], 'orders/fake.pdf', now()->toIso8601String(), $ids);
+        $this->actingAs($user, 'sanctum')->patchJson("/api/v1/orders/{$created['id']}/status", ['status' => 'in_analysis'])->assertOk();
+        $this->actingAs($user, 'sanctum')->patchJson("/api/v1/orders/{$created['id']}/status", ['status' => 'awaiting_approval'])->assertOk();
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/approval",
+            ['order_equipment_ids' => [$ids[0]], 'approval_status' => 'not_approved'],
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('data.status', 'awaiting_approval');
+        $response->assertJsonPath('data.equipments.0.approval_status', 'not_approved');
+    }
+
+    public function test_approving_an_equipment_without_a_budget_yet_is_rejected(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId))->json('data');
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/approval",
+            ['order_equipment_ids' => [$created['equipments'][0]['id']], 'approval_status' => 'approved'],
+        );
+
+        $response->assertStatus(422);
+    }
+
+    public function test_editing_an_order_preserves_equipment_approval_status_but_not_labor_cost(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+        $monitorId = $this->anEquipmentId($clientId, 'Monitor');
+
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            ...$this->minimalOrderPayload($clientId),
+            'equipments' => [['equipment_id' => $monitorId, 'labor_cost' => 40.0]],
+        ])->json('data');
+
+        app(RecordOrderPdf::class)($created['id'], 'orders/fake.pdf', now()->toIso8601String(), [$created['equipments'][0]['id']]);
+
+        $response = $this->actingAs($user, 'sanctum')->putJson("/api/v1/orders/{$created['id']}", [
+            'number' => 1337,
+            'date' => '2026-09-13',
+            'client_id' => $clientId,
+            'labor_cost' => 150.0,
+            'equipments' => [['equipment_id' => $monitorId, 'labor_cost' => 60.0]],
+            'items' => [],
+        ]);
+
+        $response->assertOk();
+        // approval_status é gerido pelo sistema — sobrevive à edição.
+        $response->assertJsonPath('data.equipments.0.approval_status', 'awaiting_approval');
+        // labor_cost vem sempre do payload novo, ao contrário de approval_status.
+        $response->assertJsonPath('data.equipments.0.labor_cost', '60.00');
     }
 }

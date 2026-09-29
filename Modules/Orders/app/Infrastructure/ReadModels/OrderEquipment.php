@@ -14,6 +14,7 @@ use Modules\Equipments\Infrastructure\ReadModels\Equipment;
     'id', 'order_id', 'equipment_id', 'name', 'brand', 'model', 'serial_number', 'asset_tag',
     'preventive_maintenance', 'calibration',
     'situation', 'situation_changed_at', 'completed_at', 'position',
+    'approval_status', 'approval_status_changed_at', 'labor_cost',
 ])]
 class OrderEquipment extends Model
 {
@@ -35,6 +36,8 @@ class OrderEquipment extends Model
             'situation_changed_at' => 'datetime',
             'completed_at' => 'datetime',
             'position' => 'integer',
+            'approval_status_changed_at' => 'datetime',
+            'labor_cost' => 'decimal:2',
         ];
     }
 
@@ -67,5 +70,16 @@ class OrderEquipment extends Model
     public function accessories(): HasMany
     {
         return $this->hasMany(OrderEquipmentAccessory::class)->orderBy('position');
+    }
+
+    /**
+     * Peças vinculadas a este equipamento (api#149) — itens sem vínculo (gerais) ficam só em
+     * `Order::items()`.
+     *
+     * @return HasMany<OrderItem, $this>
+     */
+    public function items(): HasMany
+    {
+        return $this->hasMany(OrderItem::class);
     }
 }

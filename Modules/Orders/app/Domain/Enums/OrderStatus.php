@@ -108,6 +108,28 @@ enum OrderStatus: string
     }
 
     /**
+     * Deriva a OS pra `approved` a partir do orçamento de cada equipamento (api#149) — só quando
+     * o status atual é `awaiting_approval`, disparada pelo primeiro equipamento aprovado.
+     * `not_approved` por equipamento não deriva nada (é só informativo, o `not_approved` da OS
+     * inteira continua pelos caminhos de sempre: baixa automática de 60 dias ou PATCH manual).
+     *
+     * @param  list<OrderEquipmentApprovalStatus>  $approvalStatuses  dos equipamentos com
+     *                                                                orçamento já gerado (os sem
+     *                                                                `approval_status` nem entram
+     *                                                                aqui — não têm voto ainda)
+     */
+    public function derivedFromApprovals(array $approvalStatuses): ?self
+    {
+        if ($this !== self::AwaitingApproval) {
+            return null;
+        }
+
+        $anyApproved = collect($approvalStatuses)->contains(OrderEquipmentApprovalStatus::Approved);
+
+        return $anyApproved ? self::Approved : null;
+    }
+
+    /**
      * Marcos (em dias) do alerta de "OS parada" (api#135). AwaitingApproval tem escada própria e
      * mais longa — prefeitura costuma demorar mais pra aprovar. Estados finais e pós-aprovação
      * não alertam: uma vez lá, não há "parado" a cobrar. `PartiallyCompleted` também não entra

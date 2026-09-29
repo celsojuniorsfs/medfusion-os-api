@@ -18,9 +18,11 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::put('/orders/{id}', [OrderController::class, 'update']);
     Route::patch('/orders/{id}/status', [OrderController::class, 'updateStatus']);
     Route::patch('/orders/{id}/equipments/situation', [OrderController::class, 'updateEquipmentsSituation']);
+    Route::patch('/orders/{id}/equipments/approval', [OrderController::class, 'updateEquipmentsApproval']);
 
     Route::post('/orders/{id}/pdf', [OrderPdfController::class, 'store']);
     Route::get('/orders/{id}/pdf', [OrderPdfController::class, 'show']);
+    Route::get('/orders/{id}/pdf/history', [OrderPdfController::class, 'history']);
 });
 
 // Fora do auth:sanctum de propósito, mesmo padrão de Modules/Equipments/routes/api.php: a
@@ -29,4 +31,6 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
 Route::prefix('v1')->middleware('signed')->group(function () {
     Route::get('/orders/{id}/pdf/download', [OrderPdfController::class, 'download'])
         ->name('orders.pdf.download');
+    Route::get('/orders/{id}/pdf/{pdfId}/download', [OrderPdfController::class, 'downloadHistorical'])
+        ->name('orders.pdf.download-historical');
 });

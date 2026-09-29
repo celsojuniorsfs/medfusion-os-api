@@ -87,4 +87,14 @@ class Order extends Model
     {
         return $this->hasMany(OrderItem::class);
     }
+
+    /**
+     * Histórico de orçamentos gerados (api#149) — mais recente primeiro.
+     *
+     * @return HasMany<OrderPdf, $this>
+     */
+    public function pdfs(): HasMany
+    {
+        return $this->hasMany(OrderPdf::class)->orderBy('generated_at', 'desc');
+    }
 }

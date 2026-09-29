@@ -7,17 +7,20 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Modules\Equipments\Application\RegisterEquipment;
 use Modules\Equipments\Infrastructure\ReadModels\Equipment;
 use Modules\Orders\Application\AddOrderItem;
 use Modules\Orders\Application\AttachEquipmentToOrder;
+use Modules\Orders\Application\ChangeOrderEquipmentApprovalStatus;
 use Modules\Orders\Application\ChangeOrderEquipmentSituation;
 use Modules\Orders\Application\ChangeOrderStatus;
 use Modules\Orders\Application\DeriveOrderStatusFromEquipments;
 use Modules\Orders\Application\OpenOrder;
 use Modules\Orders\Application\OrderService;
 use Modules\Orders\Application\UpdateOrder;
+use Modules\Orders\Domain\Enums\OrderEquipmentApprovalStatus;
 use Modules\Orders\Domain\Enums\OrderEquipmentSituation;
 use Modules\Orders\Domain\Enums\OrderStatus;
 use Modules\Orders\Infrastructure\ReadModels\Order;
@@ -27,7 +30,7 @@ use Modules\Orders\Presentation\Http\Resources\OrderResource;
 
 class OrderController
 {
-    private const array WITH = ['client', 'user', 'equipments.accessories', 'items'];
+    private const array WITH = ['client', 'user', 'equipments.accessories', 'equipments.items', 'items'];
 
     /**
      * O retry de contenção transitória (`ConcurrencyErrorDetector`) só funciona no nível de
@@ -225,6 +228,31 @@ class OrderController
     }
 
     /**
+     * PATCH /orders/{id}/equipments/approval (api#149) — um id ou vários. `whereNotNull('approval_status')`
+     * no `exists` recusa (422) aprovar/reprovar um equipamento sem orçamento gerado ainda.
+     */
+    public function updateEquipmentsApproval(
+        Request $request,
+        string $id,
+        ChangeOrderEquipmentApprovalStatus $changeApproval,
+    ): JsonResponse {
+        Order::findOrFail($id);
+
+        $data = $request->validate([
+            'order_equipment_ids' => ['required', 'array', 'min:1'],
+            'order_equipment_ids.*' => [
+                'uuid',
+                Rule::exists('order_equipments', 'id')->where('order_id', $id)->whereNotNull('approval_status'),
+            ],
+            'approval_status' => ['required', Rule::enum(OrderEquipmentApprovalStatus::class)],
+        ]);
+
+        $order = $changeApproval($id, $data['order_equipment_ids'], OrderEquipmentApprovalStatus::from($data['approval_status']));
+
+        return response()->json(['data' => new OrderResource($order->fresh(self::WITH))]);
+    }
+
+    /**
      * PATCH /orders/{id}/status — só o campo `status`, sem FormRequest à parte.
      * InvalidOrderStatusTransition já define o próprio render() (422); nada a capturar aqui.
      */
@@ -304,17 +332,23 @@ class OrderController
                 'situation' => $previous?->situation,
                 'situation_changed_at' => $previous?->situation_changed_at?->toISOString(),
                 'completed_at' => $previous?->completed_at?->toISOString(),
+                'approval_status' => $previous?->approval_status,
+                'approval_status_changed_at' => $previous?->approval_status_changed_at?->toISOString(),
+                'labor_cost' => $entry['labor_cost'] ?? null,
+                'items' => $entry['items'] ?? [],
             ];
         }, $equipments);
     }
 
     /**
      * @param  array<int, array<string, mixed>>  $equipments  já resolvidos por resolveEquipments()
-     * @param  array<int, array<string, mixed>>  $items
+     * @param  array<int, array<string, mixed>>  $items  gerais, sem vínculo com equipamento (api#149)
      */
     private function attachEquipmentsAndItems(string $orderId, array $equipments, array $items): void
     {
         foreach ($equipments as $equipment) {
+            $orderEquipmentId = (string) Str::uuid();
+
             app(AttachEquipmentToOrder::class)(
                 $orderId,
                 $equipment['equipment_id'],
@@ -329,7 +363,15 @@ class OrderController
                 $equipment['situation'],
                 $equipment['situation_changed_at'],
                 $equipment['completed_at'],
+                $equipment['approval_status'],
+                $equipment['approval_status_changed_at'],
+                $equipment['labor_cost'],
+                $orderEquipmentId,
             );
+
+            foreach ($equipment['items'] as $item) {
+                app(AddOrderItem::class)($orderId, $item['quantity'], $item['description'], $item['unit_price'] ?? null, $orderEquipmentId);
+            }
         }
 
         foreach ($items as $item) {

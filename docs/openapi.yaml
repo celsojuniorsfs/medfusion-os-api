@@ -923,22 +923,96 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /orders/{id}/equipments/approval:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    patch:
+      tags: [orders]
+      summary: Aprova ou reprova o orçamento de um ou mais equipamentos da OS
+      operationId: updateOrderEquipmentsApproval
+      description: >
+        api#149 — status do orçamento por equipamento (order_equipments), independente da
+        situação técnica. Só aceita ids que já têm um orçamento gerado (ver
+        POST /orders/{id}/pdf) — approval_status ainda null é rejeitado. A OS deriva pra
+        `approved` sozinha quando o primeiro equipamento é aprovado, se o status atual já for
+        `awaiting_approval` (ver OrderStatus.description); reprovar um equipamento não muda o
+        status da OS.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order_equipment_ids, approval_status]
+              properties:
+                order_equipment_ids:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+                  description: id(s) de order_equipments com orçamento já gerado.
+                approval_status: { $ref: "#/components/schemas/OrderEquipmentApprovalStatus" }
+      responses:
+        "200":
+          description: Aprovação atualizada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/Order" }
+        "409":
+          description: A OS está com um status que não aceita mais edição (canceled/completed/not_approved)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: order_equipment_ids inválido, não pertence a esta OS, ou ainda sem orçamento gerado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationErrorBody" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /orders/{id}/pdf:
     parameters:
       - $ref: "#/components/parameters/OrderId"
     post:
       tags: [orders]
-      summary: Gera o PDF da OS e o envia ao Object Storage
+      summary: Gera o orçamento (PDF) da OS e o envia ao Object Storage
       description: >
-        Cada chamada gera um arquivo novo e apaga o anterior do storage (só depois do novo estar
-        gravado) — a OS tem sempre um único PDF, o atual. GET devolve esse PDF atual.
+        api#149 — `order_equipment_ids` opcional: ausente gera o orçamento da OS inteira
+        (comportamento original); presente, gera um orçamento parcial só com os equipamentos
+        listados (mais os itens gerais, sem vínculo com nenhum equipamento). Cada chamada grava
+        um arquivo novo SEM apagar os anteriores — todos ficam no histórico
+        (GET /orders/{id}/pdf/history). `orders.pdf_path`/GET /orders/{id}/pdf continuam
+        apontando pro mais recente. Um equipamento incluído que ainda não tinha orçamento nenhum
+        (approval_status null) passa a `awaiting_approval`.
       operationId: generateOrderPdf
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                order_equipment_ids:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+                  description: ausente/null = todos os equipamentos da OS.
       responses:
         "200":
           description: PDF gerado
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrderPdf" }
+        "422":
+          description: order_equipment_ids inválido ou não pertence a esta OS
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationErrorBody" }
         "404":
           $ref: "#/components/responses/NotFound"
         "401":
@@ -961,6 +1035,34 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /orders/{id}/pdf/history:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      tags: [orders]
+      summary: Lista todos os orçamentos já gerados pra esta OS
+      description: >
+        api#149 — mais recente primeiro. Cada entrada guarda um snapshot dos equipamentos
+        incluídos NAQUELE momento (nome/posição), não uma referência viva a order_equipments —
+        sobrevive a edições da OS depois. `url` é uma URL assinada própria de cada entrada,
+        válida por 30 minutos.
+      operationId: getOrderPdfHistory
+      responses:
+        "200":
+          description: Histórico de orçamentos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/OrderPdfHistoryEntry" }
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /orders/{id}/pdf/download:
     parameters:
       - $ref: "#/components/parameters/OrderId"
@@ -973,6 +1075,28 @@ paths:
         minutos, gerada por OrderPdf.url. Nunca chamar esta rota direto sem antes passar por
         POST/GET /orders/{id}/pdf — a URL é sempre nova.
       operationId: downloadOrderPdf
+      responses:
+        "200":
+          description: Arquivo PDF (application/pdf)
+        "403":
+          description: Assinatura ausente, inválida ou expirada
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /orders/{id}/pdf/{pdfId}/download:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+      - name: pdfId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [orders]
+      summary: Baixa um orçamento específico do histórico (api#149)
+      description: >
+        Mesma credencial de /orders/{id}/pdf/download (assinatura da URL) — gerada pelo `url` de
+        cada entrada de GET /orders/{id}/pdf/history, nunca chamada direto.
+      operationId: downloadHistoricalOrderPdf
       responses:
         "200":
           description: Arquivo PDF (application/pdf)
@@ -1201,10 +1325,12 @@ components:
         do prazo de garantia, mesma OS) — depois volta a completed. partially_completed (api#140)
         deriva sozinho da situação de cada equipamento (ver OrderEquipmentSnapshot.situation) —
         nunca alcançável por PATCH /orders/{id}/status manual, mesmo estando na tabela de
-        transições. Ver api-conventions.md para a tabela completa e a correspondência com os
-        termos em português usados com o cliente (aberta, em análise, orçamento externo,
-        aguardando aprovação, aprovada, não aprovado, parcialmente concluída, garantia,
-        concluída, cancelada).
+        transições. awaiting_approval → approved (api#149) tem os dois caminhos: manual (a OS
+        inteira, como sempre foi) E automático, assim que o primeiro equipamento é aprovado (ver
+        OrderEquipmentSnapshot.approval_status) — os dois convivem, um não bloqueia o outro. Ver
+        api-conventions.md para a tabela completa e a correspondência com os termos em português
+        usados com o cliente (aberta, em análise, orçamento externo, aguardando aprovação,
+        aprovada, não aprovado, parcialmente concluída, garantia, concluída, cancelada).
       enum:
         - open
         - in_analysis
@@ -1411,6 +1537,10 @@ components:
         `preventive_maintenance`/`calibration` (api#146) valem nos dois ramos, pelo mesmo motivo
         de `accessories` — corrigido do nível de OS (api#134) pro de equipamento, porque nem todo
         equipamento tem calibração.
+
+        `labor_cost`/`items` (api#149) também valem nos dois ramos — mão de obra e peças por
+        equipamento, além dos campos gerais de mesmo nome no nível raiz de OrderInput (sem
+        vínculo com nenhum equipamento).
       # Sem os `not`, um payload com equipment_id E name ao mesmo tempo batia nos dois ramos
       # (nenhum dos dois usa additionalProperties:false, então a chave do OUTRO ramo é só
       # "propriedade extra permitida") — um validador de contrato estrito rejeitava algo que a API
@@ -1424,9 +1554,13 @@ components:
             equipment_id: { type: string, format: uuid }
             preventive_maintenance: { type: boolean, default: false }
             calibration: { type: boolean, default: false }
+            labor_cost: { type: ["number", "null"], format: float }
             accessories:
               type: array
               items: { $ref: "#/components/schemas/OrderEquipmentAccessory" }
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/OrderItem" }
         - type: object
           required: [name]
           not: { required: [equipment_id] }
@@ -1438,9 +1572,13 @@ components:
             asset_tag: { type: ["string", "null"], maxLength: 255 }
             preventive_maintenance: { type: boolean, default: false }
             calibration: { type: boolean, default: false }
+            labor_cost: { type: ["number", "null"], format: float }
             accessories:
               type: array
               items: { $ref: "#/components/schemas/OrderEquipmentAccessory" }
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/OrderItem" }
 
     OrderEquipmentSituation:
       type: string
@@ -1455,6 +1593,19 @@ components:
         - external_repair
         - completed
         - returned_unrepaired
+
+    OrderEquipmentApprovalStatus:
+      type: string
+      description: >
+        Status do orçamento de UM equipamento (api#149), independente de OrderEquipmentSituation.
+        Sem coluna correspondente no payload de entrada — nasce `null` (nenhum orçamento gerado
+        ainda) e vira `awaiting_approval` sozinho no primeiro POST /orders/{id}/pdf que inclui o
+        equipamento; só depois disso PATCH /orders/{id}/equipments/approval aceita mudar pra
+        `approved`/`not_approved`.
+      enum:
+        - awaiting_approval
+        - approved
+        - not_approved
 
     OrderEquipmentSnapshot:
       type: object
@@ -1505,6 +1656,23 @@ components:
             type: integer,
             description: "Ordem de chegada dentro da OS — vira a letra do certificado (api#61: 0 = A, 1 = B...)",
           }
+        approval_status:
+          {
+            allOf: [{ $ref: "#/components/schemas/OrderEquipmentApprovalStatus" }],
+            nullable: true,
+            description: "null = nenhum orçamento gerado ainda pra este equipamento (api#149)",
+          }
+        approval_status_changed_at: { type: ["string", "null"], format: date-time }
+        labor_cost:
+          {
+            type: ["number", "null"],
+            format: float,
+            description: "Mão de obra específica deste equipamento — convive com orders.labor_cost (geral)",
+          }
+        items:
+          type: array
+          description: Peças vinculadas a este equipamento — itens sem vínculo ficam em Order.items.
+          items: { $ref: "#/components/schemas/OrderItem" }
         accessories:
           type: array
           description: Sempre presente, mesmo vazia ([]).
@@ -1532,6 +1700,29 @@ components:
             description: "URL assinada da API (30 min), ver GET /orders/{id}/pdf/download",
           }
         generated_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+
+    OrderPdfHistoryEntry:
+      type: object
+      description: Uma entrada de GET /orders/{id}/pdf/history (api#149).
+      properties:
+        id: { type: string, format: uuid }
+        generated_at: { type: string, format: date-time }
+        equipments:
+          type: array
+          description: Snapshot (nome/posição) no momento da geração, não order_equipments ao vivo.
+          items:
+            type: object
+            properties:
+              equipment_id: { type: ["string", "null"], format: uuid }
+              name: { type: string }
+              position: { type: integer }
+        url:
+          {
+            type: string,
+            format: uri,
+            description: "URL assinada própria desta entrada, ver GET /orders/{id}/pdf/{pdfId}/download",
+          }
         expires_at: { type: string, format: date-time }
 
     Order:
@@ -1592,9 +1783,10 @@ components:
     OrderInput:
       type: object
       description: >
-        total não é enviado pelo cliente — é sempre calculado no backend a partir de items e
-        labor_cost. Pelo menos um valor precisa estar presente entre os itens com unit_price
-        preenchido e labor_cost (ver critérios de aceite em escopo-v1.md).
+        total não é enviado pelo cliente — é sempre calculado no backend a partir de labor_cost,
+        items e, desde a api#149, dos labor_cost/items de cada equipamento também. Pelo menos um
+        valor precisa estar presente em ALGUM desses lugares (ver critérios de aceite em
+        escopo-v1.md).
       required: [number, date, client_id, equipments, items]
       properties:
         number: { type: integer }
@@ -1619,4 +1811,5 @@ components:
           items: { $ref: "#/components/schemas/OrderEquipmentInput" }
         items:
           type: array
+          description: Gerais, sem vínculo com nenhum equipamento (api#149) — os demais vão em equipments[].items.
           items: { $ref: "#/components/schemas/OrderItem" }

@@ -10,5 +10,8 @@ class OrderItemAdded extends ShouldBeStored
         public readonly float $quantity,
         public readonly string $description,
         public readonly ?float $unitPrice,
+        // api#149 — null = item geral, sem equipamento específico (também o significado correto
+        // pra eventos gravados antes da #149, que nunca tiveram este conceito).
+        public readonly ?string $orderEquipmentId = null,
     ) {}
 }

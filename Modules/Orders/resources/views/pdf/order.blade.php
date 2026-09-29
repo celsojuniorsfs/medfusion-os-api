@@ -122,7 +122,7 @@
         </tr>
     </thead>
     <tbody>
-        @foreach ($order->equipments as $equipment)
+        @foreach ($equipments as $equipment)
             <tr>
                 <td>{{ $equipment->name }}</td>
                 <td>{{ $equipment->brand }}</td>
@@ -173,7 +173,7 @@
         </tr>
     </thead>
     <tbody>
-        @forelse ($order->items as $item)
+        @forelse ($items as $item)
             <tr>
                 <td>{{ rtrim(rtrim(number_format($item->quantity, 2, ',', '.'), '0'), ',') }}</td>
                 <td>{{ $item->description }}</td>
@@ -216,7 +216,7 @@
             <table class="footer-table">
                 <colgroup><col style="width: 45%;"><col style="width: 55%;"></colgroup>
                 <tr><td>Garantia</td><td class="value">{{ $order->warranty_period ?: '—' }}</td></tr>
-                <tr><td>Mão de obra</td><td class="value">{{ Fmt::currency($order->labor_cost) }}</td></tr>
+                <tr><td>Mão de obra</td><td class="value">{{ Fmt::currency($laborCost) }}</td></tr>
             </table>
         </td>
     </tr>
@@ -225,7 +225,7 @@
     <colgroup><col style="width: 85%;"><col style="width: 15%;"></colgroup>
     <tr>
         <td style="text-align: right;">Total</td>
-        <td class="value">{{ Fmt::currency($order->total) }}</td>
+        <td class="value">{{ Fmt::currency($total) }}</td>
     </tr>
 </table>
 

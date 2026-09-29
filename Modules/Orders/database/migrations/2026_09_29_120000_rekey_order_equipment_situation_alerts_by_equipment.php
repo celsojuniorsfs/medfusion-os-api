@@ -18,6 +18,11 @@ return new class extends Migration
     {
         Schema::table('order_equipment_situation_alerts', function (Blueprint $table) {
             $table->foreignUuid('order_id')->nullable()->after('id')->constrained('orders')->cascadeOnDelete();
+            // Cross-module (Equipments), mesmo padrão de order_equipments.equipment_id. Cascade,
+            // não nullOnDelete como as outras FKs pra equipments: esta tabela é só rastro de
+            // idempotência (nunca exibida a usuário) — sem o equipamento no catálogo, a próxima
+            // execução do comando já ignora essa linha (whereNotNull('equipment_id')), então
+            // mantê-la around com equipment_id nulo não serve pra nada.
             $table->foreignUuid('equipment_id')->nullable()->after('order_id')->constrained('equipments')->cascadeOnDelete();
         });
 
@@ -31,6 +36,19 @@ return new class extends Migration
         // reidratar o alerta — descarta o rastro de idempotência, o próximo run recomeça limpo.
         DB::table('order_equipment_situation_alerts')->whereNull('equipment_id')->delete();
 
+        // Defensivo: o FK antigo (order_equipment_id, cascadeOnDelete) já deveria ter apagado
+        // qualquer linha presa a uma OS editada, então duas linhas colidindo na chave nova não
+        // deveriam existir — mas adicionar o unique direto quebraria a migration inteira no meio
+        // se essa suposição estiver errada em algum ambiente real. Mantém uma linha arbitrária de
+        // cada combinação (todas seriam o mesmo fato — "este marco já foi avisado" — repetido).
+        DB::table('order_equipment_situation_alerts')
+            ->whereNotIn('id', function ($query) {
+                $query->selectRaw('MAX(id)')
+                    ->from('order_equipment_situation_alerts')
+                    ->groupBy(['order_id', 'equipment_id', 'situation_changed_at', 'milestone_days']);
+            })
+            ->delete();
+
         Schema::table('order_equipment_situation_alerts', function (Blueprint $table) {
             $table->dropUnique('order_equipment_situation_alerts_unique_milestone');
             $table->dropConstrainedForeignId('order_equipment_id');
@@ -43,6 +61,9 @@ return new class extends Migration
 
     public function down(): void
     {
+        // order_equipment_id nasce nullable aqui (a criação original era NOT NULL) — sem
+        // doctrine/dbal instalado, apertar pra NOT NULL depois do backfill abaixo exigiria
+        // recriar a tabela inteira. Rollback é best-effort, não um caminho usado em operação.
         Schema::table('order_equipment_situation_alerts', function (Blueprint $table) {
             $table->dropUnique('order_equipment_situation_alerts_unique_milestone');
             $table->foreignUuid('order_equipment_id')->nullable()->constrained('order_equipments')->cascadeOnDelete();

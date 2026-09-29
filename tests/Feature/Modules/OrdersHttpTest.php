@@ -16,6 +16,7 @@ use Modules\Orders\Application\OpenOrder;
 use Modules\Orders\Domain\Enums\OrderStatus;
 use Modules\Orders\Domain\Events\OrderEquipmentAttached;
 use Modules\Orders\Domain\Events\OrderEquipmentsCleared;
+use Modules\Orders\Domain\Events\OrderEquipmentSituationChanged;
 use Modules\Orders\Domain\Events\OrderItemsCleared;
 use Modules\Orders\Infrastructure\Projectors\OrderProjector;
 use Spatie\EventSourcing\Facades\Projectionist;
@@ -889,6 +890,79 @@ class OrdersHttpTest extends TestCase
         $response->assertJsonPath('data.equipments.0.situation', 'awaiting_part');
         $response->assertJsonPath('data.equipments.1.situation', 'awaiting_part');
         $response->assertJsonPath('data.equipments.2.situation', 'in_analysis');
+    }
+
+    /**
+     * Achado em code review: um id repetido no lote gravava dois OrderEquipmentSituationChanged
+     * com o mesmo `from` obsoleto (lido antes do loop) — o segundo evento afirmava uma transição
+     * que já tinha acontecido no primeiro. O estado final projetado sempre foi correto (por isso
+     * o bug não aparecia em nenhum teste de estado final); o teste aqui confere o stream de
+     * eventos em si, não só a projeção.
+     */
+    public function test_a_duplicate_id_in_the_batch_does_not_record_a_stale_transition(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $created = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/v1/orders', $this->minimalOrderPayload($clientId))
+            ->json('data');
+        $orderEquipmentId = $created['equipments'][0]['id'];
+
+        $response = $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/situation",
+            ['order_equipment_ids' => [$orderEquipmentId, $orderEquipmentId], 'situation' => 'completed'],
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('data.equipments.0.situation', 'completed');
+        // Um só evento, com o `from` real (in_analysis) — não dois, e não um segundo afirmando
+        // "de completed pra completed".
+        $this->assertSame(
+            1,
+            DB::table('stored_events')
+                ->where('aggregate_uuid', $created['id'])
+                ->where('event_class', OrderEquipmentSituationChanged::class)
+                ->count(),
+        );
+        $event = DB::table('stored_events')
+            ->where('aggregate_uuid', $created['id'])
+            ->where('event_class', OrderEquipmentSituationChanged::class)
+            ->first();
+        $properties = json_decode($event->event_properties, true);
+        $this->assertSame('in_analysis', $properties['from']);
+        $this->assertSame('completed', $properties['to']);
+    }
+
+    /**
+     * Achado em code review: marcar todos os equipamentos como resolvidos ANTES de aprovar a OS
+     * (a situação é independente do status, ver S2) não disparava a derivação — a OS ficava presa
+     * em `approved` até alguém mexer de novo na situação de algum equipamento.
+     */
+    public function test_approving_an_order_whose_equipments_are_already_resolved_derives_completed_immediately(): void
+    {
+        $user = $this->authenticatedUser();
+        $clientId = $this->aClientId();
+
+        $payload = $this->minimalOrderPayload($clientId);
+        $payload['equipments'] = [['name' => 'Monitor'], ['name' => 'Bomba de infusão']];
+        $created = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload)->json('data');
+        $ids = array_column($created['equipments'], 'id');
+
+        // Situação mudada ANTES da aprovação — permitido (situação é independente do status).
+        $this->actingAs($user, 'sanctum')->patchJson(
+            "/api/v1/orders/{$created['id']}/equipments/situation",
+            ['order_equipment_ids' => $ids, 'situation' => 'completed'],
+        )->assertJsonPath('data.status', 'open');
+
+        $this->actingAs($user, 'sanctum')->patchJson("/api/v1/orders/{$created['id']}/status", ['status' => 'in_analysis'])->assertOk();
+        $this->actingAs($user, 'sanctum')->patchJson("/api/v1/orders/{$created['id']}/status", ['status' => 'awaiting_approval'])->assertOk();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->patchJson("/api/v1/orders/{$created['id']}/status", ['status' => 'approved']);
+
+        $response->assertOk();
+        $response->assertJsonPath('data.status', 'completed');
     }
 
     public function test_manually_completing_an_order_with_a_pending_equipment_is_rejected(): void

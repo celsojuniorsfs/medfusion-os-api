@@ -176,7 +176,7 @@ class OrderController
 
         $data = $request->validated();
 
-        $order = DB::transaction(function () use ($data, $id, $updateOrder, $previousEquipments) {
+        $order = DB::transaction(function () use ($data, $id, $updateOrder, $previousEquipments, $deriveOrderStatus) {
             $equipments = $this->resolveEquipments($data['equipments'], $data['client_id'], $previousEquipments);
 
             $updateOrder(
@@ -200,14 +200,17 @@ class OrderController
 
             $this->attachEquipmentsAndItems($id, $equipments, $data['items'] ?? []);
 
+            // Dentro da MESMA transação (achado em code review): reanexar pode ter
+            // adicionado/removido equipamento concluído e deixado "Parcialmente concluída"
+            // desatualizado (api#140) — mesma derivação de ChangeOrderEquipmentSituation, mas
+            // aqui não há situação nova sendo aplicada, só o efeito colateral da lista ter
+            // mudado. Rodar fora da transação deixaria uma janela onde os equipamentos já
+            // reanexados são vistos com o status antigo se esta chamada falhasse depois do
+            // commit; dentro dela, o retry de TRANSACTION_ATTEMPTS também cobre uma falha aqui.
+            $deriveOrderStatus($id);
+
             return Order::findOrFail($id);
         }, self::TRANSACTION_ATTEMPTS);
-
-        // Fora da transação, depois que os equipamentos já foram reanexados: reanexar pode ter
-        // adicionado/removido equipamento concluído e deixado "Parcialmente concluída"
-        // desatualizado (api#140) — mesma derivação de ChangeOrderEquipmentSituation, mas aqui
-        // não há situação nova sendo aplicada, só o efeito colateral da lista ter mudado.
-        $deriveOrderStatus($id);
 
         return response()->json(['data' => new OrderResource($order->fresh(self::WITH))]);
     }
@@ -268,6 +271,16 @@ class OrderController
      * $previousEquipments (api#140) — só em edição (PUT): os `OrderEquipment` da OS ANTES desta
      * chamada, indexados por `equipment_id`, pra situação/data de conclusão sobreviverem ao
      * clearEquipments()+reattach do UpdateOrder. null em criação (POST) — não existe "anterior".
+     *
+     * Limitação conhecida (achado em code review): o casamento é por `equipment_id` do
+     * CATÁLOGO, não por `order_equipments.id`. Um equipamento cadastrado implicitamente por esta
+     * OS (ramo `else` abaixo) só preserva a situação numa edição se o payload da edição REENVIAR
+     * o `equipment_id` que o catálogo recebeu na primeira vez (é o que `GET /orders/{id}` sempre
+     * devolve em `equipments.*.equipment_id` — o frontend precisa reenviar, não montar a entrada
+     * do zero). Reenviar sem `equipment_id` (equivalente a "troquei por um equipamento
+     * diferente") cadastra outro equipamento novo e a situação reinicia — comportamento já
+     * existente desde a #45/#134 pro resto do snapshot (nome, marca...), a #140 só herda a mesma
+     * regra pra situação/conclusão.
      *
      * @param  array<int, array<string, mixed>>  $equipments
      * @return array<int, array<string, mixed>>

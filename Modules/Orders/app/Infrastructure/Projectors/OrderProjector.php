@@ -70,7 +70,15 @@ class OrderProjector extends Projector
         // `event-sourcing:replay` zeraria silenciosamente a marcação de todo equipamento
         // anexado antes desta mudança — a OS::findOrFail() é segura aqui porque OrderOpened
         // já criou a linha antes de qualquer OrderEquipmentAttached do mesmo agregado rodar.
-        $order = Order::findOrFail($event->aggregateRootUuid());
+        //
+        // lockForUpdate() (achado em code review): trava a linha de `orders`, não a de
+        // `order_equipments` (que pode não ter nenhuma linha ainda, nada pra travar) — serializa
+        // duas requisições concorrentes anexando equipamento na MESMA OS (double-submit de PUT,
+        // ou uma tentativa de TRANSACTION_ATTEMPTS correndo com outra). Sem isto, o COUNT()
+        // abaixo (pra `position`) é um TOCTOU clássico: as duas leriam a mesma contagem antes de
+        // qualquer INSERT confirmar, e dois equipamentos acabariam com a mesma posição — a letra
+        // do certificado (api#61) deixando de ser única.
+        $order = Order::whereKey($event->aggregateRootUuid())->lockForUpdate()->firstOrFail();
 
         // position (api#140): ordem de chegada dentro da OS, vira a letra do certificado
         // (api#61: 0 = A, 1 = B...). Determinística no replay — eventos de um mesmo agregado

@@ -16,3 +16,6 @@ Schedule::command('orders:check-stalled')->daily()->withoutOverlapping();
 
 // api#147 — comando próprio, escada de marcos diferente da de cima.
 Schedule::command('orders:check-equipment-situations')->daily()->withoutOverlapping();
+
+// api#136 — mesmo padrão, marcos em meses (6/11) em vez de dias.
+Schedule::command('alerts:check-equipment-revisions')->daily()->withoutOverlapping();

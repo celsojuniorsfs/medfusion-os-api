@@ -8,9 +8,7 @@ use Illuminate\Queue\SerializesModels;
 use Modules\Orders\Infrastructure\ReadModels\OrderEquipment;
 
 /**
- * Sem ShouldQueue de propósito — mesmo motivo de OrderStalledMail (api#135): não roda worker de
- * fila em produção (ver docs/architecture.md). Enviado direto, dentro do comando agendado
- * (api#147).
+ * Sem ShouldQueue de propósito — não roda worker de fila em produção (ver docs/architecture.md).
  */
 class OrderEquipmentSituationMail extends Mailable
 {

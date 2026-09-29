@@ -5,6 +5,15 @@ Lições de erros já cometidos nesta base de código — leia antes de trabalha
 `api-conventions.md`, `openapi.yaml`, `ambientes.md`); este arquivo é só sobre armadilhas
 operacionais do ambiente e do framework.
 
+## Comentários no código: só o essencial
+
+Não encher o código de comentário. Comentar só o que realmente precisa: lógica difícil de
+entender só lendo o código, ou uma decisão/motivo que não é óbvio a partir do próprio código (o
+"porquê", não o "o quê" — o código já diz o que faz). Nada de comentário redundante repetindo o
+que a linha logo abaixo já deixa claro.
+
+
+
 ## Git neste checkout: `Modules/` pode estar em minúsculas no disco
 
 Em ambiente Windows/NTFS (case-insensitive, case-preserving), os diretórios dentro de `Modules/`

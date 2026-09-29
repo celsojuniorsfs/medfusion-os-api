@@ -14,6 +14,5 @@ Artisan::command('inspire', function () {
 // separado (ver docs/ambientes.md § Scheduler, a preencher).
 Schedule::command('orders:check-stalled')->daily()->withoutOverlapping();
 
-// api#147 — mesmo motivo do comando acima (sem fila), comando próprio (Q4 do grill-me: escadas de
-// marcos diferentes, destinatários que podem divergir no futuro com o liga/desliga da api#137).
+// api#147 — comando próprio, escada de marcos diferente da de cima.
 Schedule::command('orders:check-equipment-situations')->daily()->withoutOverlapping();

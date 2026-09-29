@@ -8,10 +8,8 @@ use Modules\Identity\Infrastructure\ReadModels\User;
 use Modules\Orders\Application\CheckEquipmentSituations;
 
 /**
- * Agendado diário em routes/console.php (api#147), separado de `orders:check-stalled` (api#135)
- * de propósito — escadas de marcos diferentes (7/15 fixo aqui, variável por status lá), e os
- * destinatários podem divergir no futuro (api#137, liga/desliga por tipo). Fino de propósito, mesmo
- * padrão de CheckStalledOrdersCommand: quem sabe a regra é a Action.
+ * Agendado diário em routes/console.php (api#147). Separado de `orders:check-stalled`
+ * (api#135) de propósito: escadas de marcos diferentes.
  */
 class CheckEquipmentSituationsCommand extends Command
 {

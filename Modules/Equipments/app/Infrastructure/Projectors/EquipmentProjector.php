@@ -56,13 +56,9 @@ class EquipmentProjector extends Projector
 
     /**
      * Evento de OUTRO módulo (EquipmentModels), tratado aqui de propósito: Equipments pode conhecer
-     * o catálogo, nunca o contrário — e a classe de evento é justamente o contrato público que
-     * docs/architecture.md sanciona pra atravessar essa fronteira.
-     *
-     * É **projector e não reactor** porque isto é reconstrução de projeção, não efeito colateral
-     * externo: um replay precisa reaplicar o rename na ordem certa. Como o replay do spatie segue a
-     * ordem global de `stored_events.id`, o EquipmentRegistered antigo projeta o nome da época e
-     * este handler corrige em seguida — o estado final bate com o de produção.
+     * o catálogo, nunca o contrário (ver architecture.md). É projector, não reactor, porque é
+     * reconstrução de projeção: um replay segue a ordem global de `stored_events.id`, então o
+     * EquipmentRegistered antigo projeta o nome da época e este handler corrige em seguida.
      *
      * `order_equipments` NÃO é tocado: a OS guarda o snapshot do que foi atendido na época, e
      * corrigir o catálogo hoje não reescreve histórico (ver api-conventions.md § Snapshot do
@@ -78,11 +74,9 @@ class EquipmentProjector extends Projector
             'model' => $event->model,
         ]);
 
-        // Equipamentos legados (evento anterior ao api#101) não têm o vínculo gravado em evento
-        // nenhum: num replay ele é re-derivado pelo trio, e o rename acabaria de quebrar essa
-        // derivação. Alcançá-los pelo trio ANTERIOR — que o evento carrega justamente pra isso — é
-        // o que faz o replay terminar igual à produção, em vez de deixá-los sem modelo e com o
-        // texto antigo. Também aproveita pra gravar o vínculo que faltava.
+        // Equipamentos legados (sem vínculo gravado em evento) são re-derivados pelo trio num
+        // replay, e o rename quebraria essa derivação. Por isso a busca usa o trio ANTERIOR, que o
+        // evento carrega pra isso, e já grava o vínculo que faltava.
         if ($event->previousName !== null) {
             Equipment::whereNull('equipment_model_id')
                 ->where('name', $event->previousName)
@@ -128,8 +122,7 @@ class EquipmentProjector extends Projector
     public function onEquipmentPhotoAdded(EquipmentPhotoAdded $event): void
     {
         EquipmentPhoto::create([
-            // id vem do evento, não gerado aqui (ver EquipmentPhotoAdded): ele aparece na URL da
-            // foto, então precisa sobreviver a um replay.
+            // id vem do evento, não gerado aqui (ver EquipmentPhotoAdded).
             'id' => $event->photoId,
             'equipment_id' => $event->aggregateRootUuid(),
             'path' => $event->path,
@@ -157,14 +150,10 @@ class EquipmentProjector extends Projector
     }
 
     /**
-     * Eventos gravados antes do api#101 não têm `equipmentModelId` (o parâmetro tem default no
-     * construtor justamente pra eles continuarem desserializando) — nesses casos procura a entrada
-     * do catálogo pelo trio que o evento carrega. É uma busca **somente leitura**: o projector
-     * nunca cadastra modelo. Criar entrada de catálogo aqui significaria gravar evento durante um
-     * `event-sourcing:replay` — escrever no event store enquanto ele é relido, não determinístico
-     * e crescendo a cada replay. Não achar é um resultado legítimo: `null` quer dizer "modelo
-     * desconhecido" pra aquele equipamento antigo, e o nome/marca/modelo dele continuam intactos
-     * nas colunas próprias.
+     * Eventos antigos não têm `equipmentModelId` — nesses casos procura a entrada do catálogo pelo
+     * trio que o evento carrega. Busca **somente leitura**: o projector nunca cadastra modelo (criar
+     * entrada aqui seria gravar evento durante um replay, não determinístico). Não achar é legítimo:
+     * `null` significa "modelo desconhecido", e o trio continua intacto nas colunas próprias.
      */
     private function resolveEquipmentModelId(?string $equipmentModelId, string $name, ?string $brand, ?string $model): ?string
     {
@@ -182,12 +171,10 @@ class EquipmentProjector extends Projector
     }
 
     /**
-     * Invalida a listagem em cache (ver docs/architecture.md § Cache) incrementando um contador
-     * de versão — não `Cache::tags()->flush()` (achado em produção: operação multi-chave, fonte
-     * conhecida de comportamento inconsistente em Redis/Valkey gerenciado com réplica/cluster).
-     * Uma versão só pro módulo inteiro, não por cliente: EquipmentUpdated/EquipmentRemoved nem
-     * carregam client_id no evento, e listas por cliente são pequenas o bastante pra um cache
-     * miss a mais em clientes não afetados não pesar.
+     * Invalida o cache incrementando um contador de versão, não `Cache::tags()->flush()` (operação
+     * multi-chave, fonte conhecida de inconsistência em Redis/Valkey gerenciado com
+     * réplica/cluster). Versão única pro módulo inteiro: EquipmentUpdated/EquipmentRemoved nem
+     * carregam client_id no evento.
      */
     private function forgetCache(): void
     {
@@ -195,18 +182,14 @@ class EquipmentProjector extends Projector
     }
 
     /**
-     * Chamado pelo spatie antes de um `event-sourcing:replay --from=0` (ver Projectionist::replay)
-     * — sem isso, `onEquipmentRegistered` estoura ao recriar uma linha que já existe. Filhos antes
-     * do pai (`equipment_photos`/`equipment_accessories` referenciam `equipments`), e FKs
-     * desligadas: `order_equipments.equipment_id` (nullOnDelete) pertence a Orders, e replayar só
-     * este projector não pode falhar por causa de outro módulo nem apagar a tabela dele —
-     * `OrderProjector::resetState()` cuida da própria tabela quando o replay inclui os dois.
+     * Chamado pelo spatie antes de um `event-sourcing:replay --from=0`, pra `onEquipmentRegistered`
+     * não estourar recriando linha existente. Filhos antes do pai, e FKs desligadas porque
+     * `order_equipments.equipment_id` pertence a Orders (`OrderProjector::resetState()` cuida da
+     * própria tabela).
      *
-     * $aggregateUuid vem preenchido com `--aggregate-uuid=X` (replay de um agregado só) — o
-     * spatie chama isto de qualquer forma (ver Projectionist::replay), então zerar as tabelas
-     * inteiras aqui apagaria todo mundo pra reconstruir só um equipamento. Os filtros por
-     * `equipment_id`/`whereKey` somem quando o replay é de verdade completo
-     * (`$aggregateUuid === null`).
+     * $aggregateUuid vem preenchido num replay de um agregado só (`--aggregate-uuid=X`) — sem
+     * filtrar por ele aqui, zerar as tabelas inteiras apagaria todo mundo pra reconstruir um só
+     * equipamento.
      */
     public function resetState(?string $aggregateUuid = null): void
     {
@@ -220,11 +203,8 @@ class EquipmentProjector extends Projector
     }
 
     /**
-     * Substitui as linhas do pivot por completo a cada register/update — mais simples que
-     * calcular um diff (o que mudou, o que ficou igual) sem nenhum ganho real de auditoria: ao
-     * contrário do PUT de Orders (que audita peça por peça numa OS), aqui a "foto" atual é tudo
-     * que importa. Mesmo espírito do Cleared+reanexa de Orders, só que dentro do mesmo evento em
-     * vez de eventos à parte.
+     * Substitui as linhas do pivot por completo a cada register/update — mais simples que um diff,
+     * sem ganho real de auditoria: ao contrário do PUT de Orders, aqui só a "foto" atual importa.
      *
      * @param  array<int, array{accessory_id: string, quantity: int}>  $accessories
      */

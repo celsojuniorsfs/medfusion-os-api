@@ -8,9 +8,8 @@ use Modules\Orders\Domain\OrderAggregate;
 use Modules\Orders\Infrastructure\ReadModels\Order;
 
 /**
- * PATCH /orders/{id}/equipments/situation (api#140) — um id ou vários (marcação em lote, pedida
- * pelo cliente na S2 pra lotes de prefeitura/hospital que chegam a 60 equipamentos): mesmo
- * endpoint serve os dois casos.
+ * PATCH /orders/{id}/equipments/situation (api#140) — aceita um id ou vários (marcação em lote):
+ * mesmo endpoint serve os dois casos.
  */
 class ChangeOrderEquipmentSituation
 {
@@ -27,10 +26,9 @@ class ChangeOrderEquipmentSituation
      */
     public function __invoke(string $orderId, array $orderEquipmentIds, OrderEquipmentSituation $to): Order
     {
-        // Numa transação só (achado em code review, mesmo motivo do OrderController::update()):
-        // sem isto, uma falha entre o persist() dos eventos de situação e a derivação do status
-        // deixaria os equipamentos já mudados mas a OS presa no status antigo, com a requisição
-        // respondendo 500 pra uma mudança que na verdade já tinha acontecido.
+        // Numa transação só (mesmo motivo de OrderController::update()) — sem isto, uma falha
+        // entre persistir os eventos de situação e derivar o status deixaria os equipamentos já
+        // mudados mas a OS presa no status antigo.
         DB::transaction(function () use ($orderId, $orderEquipmentIds, $to) {
             $order = Order::with('equipments')->findOrFail($orderId);
 
@@ -42,10 +40,9 @@ class ChangeOrderEquipmentSituation
 
             $aggregate = OrderAggregate::retrieve($orderId);
 
-            // array_unique (achado em code review): sem isto, um id repetido no lote gravaria
-            // dois OrderEquipmentSituationChanged com o MESMO `from` obsoleto (lido antes do
-            // loop) — o segundo evento afirmaria uma transição que já tinha acontecido no
-            // primeiro, corrompendo o histórico mesmo com o estado final projetado correto.
+            // array_unique: sem isto, um id repetido no lote gravaria dois
+            // OrderEquipmentSituationChanged com o mesmo `from` obsoleto (lido antes do loop),
+            // corrompendo o histórico mesmo com o estado final projetado correto.
             foreach (array_unique($orderEquipmentIds) as $orderEquipmentId) {
                 $from = OrderEquipmentSituation::from($situationByEquipmentId[$orderEquipmentId]->situation);
 

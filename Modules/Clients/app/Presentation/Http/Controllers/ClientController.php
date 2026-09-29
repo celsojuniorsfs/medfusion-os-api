@@ -84,11 +84,10 @@ class ClientController
     }
 
     /**
-     * DELETE /clients/{id} — a checagem de OS vinculada e a remoção dos equipamentos ficam aqui
-     * (Presentation), não em RemoveClient: a Application de um módulo não pode importar o read
-     * model de outro (ver docs/architecture.md § regra de fronteira). Cada equipamento é removido
-     * pelo próprio agregado (RemoveEquipment) antes do cliente, numa transação — assim gera seu
-     * próprio EquipmentRemoved em stored_events, em vez de sumir via cascadeOnDelete do banco.
+     * Checagem de OS vinculada e remoção dos equipamentos ficam aqui (Presentation), não em
+     * RemoveClient — Application não pode importar read model de outro módulo. Cada equipamento
+     * é removido pelo próprio agregado (RemoveEquipment) antes do cliente, numa transação, para
+     * gerar seu EquipmentRemoved em vez de sumir via cascadeOnDelete.
      */
     public function destroy(string $id, RemoveClient $removeClient, RemoveEquipment $removeEquipment): Response|JsonResponse
     {

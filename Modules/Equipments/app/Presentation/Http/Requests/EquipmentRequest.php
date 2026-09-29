@@ -33,15 +33,12 @@ class EquipmentRequest extends FormRequest
             'serial_number' => ['nullable', 'string', 'max:255'],
             'asset_tag' => ['nullable', 'string', 'max:255'],
 
-            // Obrigatório desde o api#112 — fecha a causa-raiz da issue #110: até aqui,
-            // name/brand/model chegavam como texto livre e o EquipmentController cadastrava uma
-            // entrada no catálogo global sozinho quando não achava uma igual, então erro de
-            // digitação e dado de teste entravam pra sempre sem ninguém pedir. Exigir o id aqui
-            // significa que a ÚNICA porta de entrada do catálogo passa a ser a tela dedicada
-            // (POST /equipment-models) — este endpoint só referencia, nunca mais cria.
-            //
-            // name/brand/model NÃO aparecem mais aqui: o front não manda mais texto livre (só
-            // seleciona), e o controller lê o trio do EquipmentModel encontrado, não do payload.
+            // Obrigatório desde o api#112 (fecha a causa-raiz da issue #110): antes, name/brand/model
+            // chegavam como texto livre e o controller cadastrava entrada nova no catálogo sozinho
+            // quando não achava uma igual, deixando erro de digitação entrar sem ninguém pedir.
+            // Exigir o id faz da tela dedicada (POST /equipment-models) a única porta de entrada do
+            // catálogo — este endpoint só referencia. name/brand/model não aparecem mais aqui: o
+            // controller lê o trio do EquipmentModel encontrado, não do payload.
             'equipment_model_id' => ['required', 'uuid', 'exists:equipment_models,id'],
 
             'no_accessories' => ['required', 'boolean'],

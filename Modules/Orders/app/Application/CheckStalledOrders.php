@@ -80,9 +80,9 @@ class CheckStalledOrders
                 Mail::to($email)->send(new OrderStalledMail($order, $milestone, $isAutoRejectMilestone));
             }
 
-            // Confirmado com o cliente: aos 60 dias sem retorno em "aguardando aprovação", o
-            // sistema marca "Não aprovado" sozinho — dispara depois do e-mail, pra ele já poder
-            // avisar "foi marcado como não aprovado" em vez de "vai completar 60 dias".
+            // Aos 60 dias sem retorno em "aguardando aprovação", o sistema marca "Não aprovado"
+            // sozinho — dispara depois do e-mail, pra ele já poder avisar "foi marcado como não
+            // aprovado" em vez de "vai completar 60 dias".
             if ($isAutoRejectMilestone) {
                 try {
                     ($this->changeOrderStatus)($order->id, OrderStatus::NotApproved);

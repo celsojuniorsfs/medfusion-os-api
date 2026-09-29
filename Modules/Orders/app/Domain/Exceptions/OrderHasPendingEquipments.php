@@ -6,12 +6,9 @@ use DomainException;
 use Illuminate\Http\JsonResponse;
 
 /**
- * PATCH /orders/{id}/status pra `completed` (api#140) — mesmo estilo de render() de
- * InvalidOrderStatusTransition: 422, formato ValidationErrorBody do openapi.yaml. Não é a mesma
- * exceção porque a transição em si é válida na tabela de OrderStatus; o que barra é o estado dos
- * equipamentos, uma checagem além da máquina de estados (mesmo raciocínio de
- * OrderService::assertIsEditable, mas aqui mora no Domain porque a Action de status não passa
- * pela Presentation antes de decidir).
+ * PATCH /orders/{id}/status pra `completed` (api#140). 422, mesmo formato de
+ * InvalidOrderStatusTransition, mas exceção separada porque a transição em si é válida na tabela
+ * de OrderStatus — o que barra é o estado dos equipamentos, uma checagem além da máquina de estados.
  */
 class OrderHasPendingEquipments extends DomainException
 {

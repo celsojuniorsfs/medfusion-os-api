@@ -22,10 +22,9 @@ class OrderRequest extends FormRequest
 
     /**
      * Shim transitório: um cliente Angular ainda não atualizado manda `accessories` como string
-     * livre (formato antigo) — sem isso, toda criação/edição de OS por ele passaria a estourar 422
-     * assim que esta API subisse, antes do web ser deployado. Remover depois que o web atualizado
-     * estiver em produção (não remover a normalização equivalente em OrderEquipmentAttached — essa
-     * é permanente, protege replay de eventos já gravados).
+     * livre (formato antigo) — sem isso, toda criação/edição por ele estouraria 422 antes do web
+     * ser atualizado. Remover depois do deploy do web (não remover a normalização equivalente em
+     * OrderEquipmentAttached — essa é permanente, protege replay de eventos já gravados).
      */
     protected function prepareForValidation(): void
     {
@@ -74,9 +73,8 @@ class OrderRequest extends FormRequest
             'equipments.*.model' => ['nullable', 'string', 'max:255'],
             'equipments.*.serial_number' => ['nullable', 'string', 'max:255'],
             'equipments.*.asset_tag' => ['nullable', 'string', 'max:255'],
-            // Alimenta a contagem de 12 meses até a próxima revisão (medfusion-os-api#136), por
-            // equipamento — corrigido do nível de OS (medfusion-os-api#134) pro de equipamento,
-            // porque nem todo equipamento tem calibração.
+            // Alimenta a contagem de 12 meses até a próxima revisão (api#136), por equipamento —
+            // nem todo equipamento tem calibração.
             'equipments.*.preventive_maintenance' => ['boolean'],
             'equipments.*.calibration' => ['boolean'],
             'equipments.*.accessories' => ['nullable', 'array'],

@@ -8,16 +8,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Read model do módulo Clients — construído pelo ClientProjector a partir dos eventos do
- * ClientAggregate. id é o mesmo uuid do agregado.
- *
- * De propósito, sem relação `equipments()`/`orders()` aqui: Clients é lido por Equipments e
- * Orders, nunca o contrário (ver CLAUDE.md § Grafo de dependências). Este model já teve as
- * duas — removidas na auditoria de acoplamento de 13/09/2026 por não terem nenhum consumidor
- * (nenhum controller/resource/teste as chamava) e apontarem na direção errada do grafo.
+ * Read model do módulo Clients, construído pelo ClientProjector; id é o mesmo uuid do agregado.
+ * De propósito, sem relação `equipments()`/`orders()`: Clients é lido por Equipments e Orders,
+ * nunca o contrário (ver CLAUDE.md § Grafo de dependências).
  */
-// "id" entra no fillable porque o ClientProjector cria a linha com o mesmo uuid do agregado
-// (identidade compartilhada agregado/projeção) — não é um id "adivinhável" vindo de input HTTP.
+// "id" está no fillable porque o ClientProjector cria a linha com o uuid do agregado (identidade
+// compartilhada), não porque venha de input HTTP.
 #[Fillable([
     'id', 'person_type', 'name', 'trade_name', 'tax_id', 'state_registration', 'requester',
     'department', 'phone', 'email', 'address', 'city', 'state', 'postal_code',

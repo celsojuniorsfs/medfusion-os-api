@@ -15,8 +15,8 @@ use Modules\Equipments\Infrastructure\ReadModels\Equipment;
 class EquipmentModelController
 {
     /**
-     * GET /equipment-models — catálogo global, sem paginação, busca no servidor, nem cache: lista
-     * inteira, filtro client-side no seletor do front (mesma decisão de AccessoryController::index).
+     * GET /equipment-models — sem paginação, busca no servidor ou cache: lista inteira, filtro
+     * client-side no seletor do front (mesma decisão de AccessoryController::index).
      */
     public function index(): JsonResponse
     {

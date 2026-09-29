@@ -7,10 +7,8 @@ use Illuminate\Http\JsonResponse;
 use Modules\Orders\Domain\Enums\OrderStatus;
 
 /**
- * PUT /orders/{id} não tinha nenhuma trava de status até esta exceção existir — uma OS
- * cancelada/concluída/reprovada podia ser editada normalmente. Mesmo estilo de render() de
- * DuplicateOrderNumberException (sem app/Exceptions/Handler neste projeto): 409, não 422 — não é
- * um erro de validação do payload, é o recurso inteiro que não aceita mais essa operação.
+ * 409, não 422 — não é erro de validação do payload, é o recurso inteiro que não aceita mais
+ * essa operação.
  */
 class OrderNotEditableException extends DomainException
 {

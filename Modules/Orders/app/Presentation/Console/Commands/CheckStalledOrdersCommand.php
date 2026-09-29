@@ -8,10 +8,9 @@ use Modules\Identity\Infrastructure\ReadModels\User;
 use Modules\Orders\Application\CheckStalledOrders;
 
 /**
- * Agendado diário em routes/console.php (api#135). Fino de propósito — igual aos controllers,
- * quem sabe a regra é a Action. Resolve os destinatários (administrative/general_admin) aqui, não
- * na Action: Presentation pode compor leitura entre módulos, Application não (ver
- * docs/architecture.md).
+ * Agendado diário em routes/console.php (api#135). Fino de propósito: resolve os destinatários
+ * (administrative/general_admin) aqui, não na Action — Presentation pode compor leitura entre
+ * módulos, Application não (ver docs/architecture.md).
  */
 class CheckStalledOrdersCommand extends Command
 {

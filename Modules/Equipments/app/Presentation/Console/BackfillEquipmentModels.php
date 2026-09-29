@@ -11,25 +11,16 @@ use Modules\EquipmentModels\Infrastructure\ReadModels\EquipmentModel;
  * Comando de uma vez só, rodado depois do deploy do api#101: semeia o catálogo global com o que já
  * existe no banco e liga os equipamentos já cadastrados às entradas correspondentes.
  *
- * É o que entrega o pedido do cliente ("cadastrar todos os equipamentos que a gente já atuou na
- * assistência") sem ninguém redigitar nada: o catálogo nasce com o histórico dele dentro.
+ * Mora em Equipments, não em EquipmentModels, pela direção do grafo de dependências (ver
+ * CLAUDE.md): Equipments pode chamar o catálogo, nunca o contrário.
  *
- * Mora em Equipments, não em EquipmentModels, por causa da direção do grafo de dependências (ver
- * CLAUDE.md): Equipments pode ler/chamar o catálogo — é o que o EquipmentController já faz —, mas
- * o catálogo não pode conhecer quem está acima dele.
+ * Cadastrar entrada nova passa pela Action de verdade (agregado, evento, projector) — nada de
+ * INSERT cru, ou a linha some no primeiro replay. Já preencher `equipments.equipment_model_id` é
+ * UPDATE direto sem evento, e isso é correto: é campo derivado, e o UPDATE só antecipa o que o
+ * EquipmentProjector já produziria reprocessando um evento antigo.
  *
- * Duas etapas, com naturezas diferentes de propósito:
- *
- * 1. Cadastrar as entradas de catálogo passa pela Action de verdade — agregado, evento gravado,
- *    projector. Nada de INSERT cru: uma linha de catálogo sem evento sumiria no primeiro
- *    `event-sourcing:replay`.
- * 2. Preencher `equipments.equipment_model_id` é um UPDATE direto, sem evento — e isso está certo,
- *    não é atalho: essa coluna é campo derivado de projeção, e o EquipmentProjector já reproduz
- *    exatamente essa mesma derivação (busca pelo trio) ao reprocessar um evento antigo. O UPDATE
- *    só antecipa o que um replay produziria; não é uma decisão de domínio nova.
- *
- * Idempotente: rodar duas vezes não duplica nada (só considera trios que ainda não têm entrada no
- * catálogo, e só preenche equipamentos com a FK vazia).
+ * Idempotente: só considera trios sem entrada no catálogo, e só preenche equipamentos com a FK
+ * vazia.
  */
 class BackfillEquipmentModels extends Command
 {

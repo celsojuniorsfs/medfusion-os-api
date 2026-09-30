@@ -41,17 +41,25 @@ return new class extends Migration
         // deveriam existir — mas adicionar o unique direto quebraria a migration inteira no meio
         // se essa suposição estiver errada em algum ambiente real. Mantém uma linha arbitrária de
         // cada combinação (todas seriam o mesmo fato — "este marco já foi avisado" — repetido).
+        // Tabela derivada (fromSub) porque o MySQL recusa DELETE com subquery direta na própria
+        // tabela (erro 1093); o SQLite dos testes aceitava, por isso só apareceu no MySQL.
         DB::table('order_equipment_situation_alerts')
             ->whereNotIn('id', function ($query) {
-                $query->selectRaw('MAX(id)')
-                    ->from('order_equipment_situation_alerts')
-                    ->groupBy(['order_id', 'equipment_id', 'situation_changed_at', 'milestone_days']);
+                $query->select('keep.id')->fromSub(
+                    fn ($latest) => $latest->selectRaw('MAX(id) as id')
+                        ->from('order_equipment_situation_alerts')
+                        ->groupBy(['order_id', 'equipment_id', 'situation_changed_at', 'milestone_days']),
+                    'keep',
+                );
             })
             ->delete();
 
+        // FK antes do índice: no MySQL o unique antigo (order_equipment_id, ...) é o índice que
+        // sustenta a FK, e dropar o índice primeiro dá erro 1553.
         Schema::table('order_equipment_situation_alerts', function (Blueprint $table) {
+            $table->dropForeign(['order_equipment_id']);
             $table->dropUnique('order_equipment_situation_alerts_unique_milestone');
-            $table->dropConstrainedForeignId('order_equipment_id');
+            $table->dropColumn('order_equipment_id');
             $table->unique(
                 ['order_id', 'equipment_id', 'situation_changed_at', 'milestone_days'],
                 'order_equipment_situation_alerts_unique_milestone',
@@ -65,7 +73,6 @@ return new class extends Migration
         // doctrine/dbal instalado, apertar pra NOT NULL depois do backfill abaixo exigiria
         // recriar a tabela inteira. Rollback é best-effort, não um caminho usado em operação.
         Schema::table('order_equipment_situation_alerts', function (Blueprint $table) {
-            $table->dropUnique('order_equipment_situation_alerts_unique_milestone');
             $table->foreignUuid('order_equipment_id')->nullable()->constrained('order_equipments')->cascadeOnDelete();
         });
 
@@ -75,8 +82,10 @@ return new class extends Migration
         ');
 
         Schema::table('order_equipment_situation_alerts', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('order_id');
-            $table->dropConstrainedForeignId('equipment_id');
+            $table->dropForeign(['order_id']);
+            $table->dropForeign(['equipment_id']);
+            $table->dropUnique('order_equipment_situation_alerts_unique_milestone');
+            $table->dropColumn(['order_id', 'equipment_id']);
             $table->unique(
                 ['order_equipment_id', 'situation_changed_at', 'milestone_days'],
                 'order_equipment_situation_alerts_unique_milestone',

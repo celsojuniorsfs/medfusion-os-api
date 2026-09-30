@@ -16,25 +16,36 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('order_equipment_situation_alerts', function (Blueprint $table) {
-            $table->foreignUuid('order_id')->nullable()->after('id')->constrained('orders')->cascadeOnDelete();
+        // DDL no MySQL não é transacional: uma execução que falhou no meio deixa colunas/índices
+        // pela metade em produção. Cada passo confere o estado real antes de rodar, então re-rodar
+        // retoma de onde parou.
+        $table = 'order_equipment_situation_alerts';
+
+        Schema::table($table, function (Blueprint $blueprint) use ($table) {
+            if (! Schema::hasColumn($table, 'order_id')) {
+                $blueprint->foreignUuid('order_id')->nullable()->after('id')->constrained('orders')->cascadeOnDelete();
+            }
             // Cross-module (Equipments), mesmo padrão de order_equipments.equipment_id. Cascade,
             // não nullOnDelete como as outras FKs pra equipments: esta tabela é só rastro de
             // idempotência (nunca exibida a usuário) — sem o equipamento no catálogo, a próxima
             // execução do comando já ignora essa linha (whereNotNull('equipment_id')), então
             // mantê-la around com equipment_id nulo não serve pra nada.
-            $table->foreignUuid('equipment_id')->nullable()->after('order_id')->constrained('equipments')->cascadeOnDelete();
+            if (! Schema::hasColumn($table, 'equipment_id')) {
+                $blueprint->foreignUuid('equipment_id')->nullable()->after('order_id')->constrained('equipments')->cascadeOnDelete();
+            }
         });
 
-        DB::statement('
-            UPDATE order_equipment_situation_alerts
-            SET order_id = (SELECT order_id FROM order_equipments WHERE order_equipments.id = order_equipment_situation_alerts.order_equipment_id),
-                equipment_id = (SELECT equipment_id FROM order_equipments WHERE order_equipments.id = order_equipment_situation_alerts.order_equipment_id)
-        ');
+        if (Schema::hasColumn($table, 'order_equipment_id')) {
+            DB::statement('
+                UPDATE order_equipment_situation_alerts
+                SET order_id = (SELECT order_id FROM order_equipments WHERE order_equipments.id = order_equipment_situation_alerts.order_equipment_id),
+                    equipment_id = (SELECT equipment_id FROM order_equipments WHERE order_equipments.id = order_equipment_situation_alerts.order_equipment_id)
+            ');
+        }
 
         // Equipamento sem vínculo com o catálogo (removido dele) não tem identidade estável pra
         // reidratar o alerta — descarta o rastro de idempotência, o próximo run recomeça limpo.
-        DB::table('order_equipment_situation_alerts')->whereNull('equipment_id')->delete();
+        DB::table($table)->whereNull('equipment_id')->delete();
 
         // Defensivo: o FK antigo (order_equipment_id, cascadeOnDelete) já deveria ter apagado
         // qualquer linha presa a uma OS editada, então duas linhas colidindo na chave nova não
@@ -43,7 +54,7 @@ return new class extends Migration
         // cada combinação (todas seriam o mesmo fato — "este marco já foi avisado" — repetido).
         // Tabela derivada (fromSub) porque o MySQL recusa DELETE com subquery direta na própria
         // tabela (erro 1093); o SQLite dos testes aceitava, por isso só apareceu no MySQL.
-        DB::table('order_equipment_situation_alerts')
+        DB::table($table)
             ->whereNotIn('id', function ($query) {
                 $query->select('keep.id')->fromSub(
                     fn ($latest) => $latest->selectRaw('MAX(id) as id')
@@ -54,16 +65,26 @@ return new class extends Migration
             })
             ->delete();
 
+        $hasForeign = collect(Schema::getForeignKeys($table))->contains(fn ($fk) => $fk['columns'] === ['order_equipment_id']);
+        $indexes = collect(Schema::getIndexes($table))->keyBy('name');
+        $indexName = 'order_equipment_situation_alerts_unique_milestone';
+        $uniqueIsNew = $indexes->has($indexName) && $indexes[$indexName]['columns'] === ['order_id', 'equipment_id', 'situation_changed_at', 'milestone_days'];
+
         // FK antes do índice: no MySQL o unique antigo (order_equipment_id, ...) é o índice que
         // sustenta a FK, e dropar o índice primeiro dá erro 1553.
-        Schema::table('order_equipment_situation_alerts', function (Blueprint $table) {
-            $table->dropForeign(['order_equipment_id']);
-            $table->dropUnique('order_equipment_situation_alerts_unique_milestone');
-            $table->dropColumn('order_equipment_id');
-            $table->unique(
-                ['order_id', 'equipment_id', 'situation_changed_at', 'milestone_days'],
-                'order_equipment_situation_alerts_unique_milestone',
-            );
+        Schema::table($table, function (Blueprint $blueprint) use ($table, $hasForeign, $indexes, $indexName, $uniqueIsNew) {
+            if ($hasForeign) {
+                $blueprint->dropForeign(['order_equipment_id']);
+            }
+            if ($indexes->has($indexName) && ! $uniqueIsNew) {
+                $blueprint->dropUnique($indexName);
+            }
+            if (Schema::hasColumn($table, 'order_equipment_id')) {
+                $blueprint->dropColumn('order_equipment_id');
+            }
+            if (! $uniqueIsNew) {
+                $blueprint->unique(['order_id', 'equipment_id', 'situation_changed_at', 'milestone_days'], $indexName);
+            }
         });
     }
 

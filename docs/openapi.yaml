@@ -50,10 +50,9 @@ tags:
     description: Ordens de Serviço
   - name: alerts
     description: >
-      Alertas operacionais internos (api#136) — só administrative/general_admin, avisados pelo
-      painel de alertas do front-end, não por e-mail (api#158). Revisão anual por equipamento é o
-      primeiro tipo exposto via API; outros tipos (OS parada, situação do equipamento) entram numa
-      issue futura.
+      Alertas operacionais internos (api#135, #147, #136) — só administrative/general_admin,
+      avisados pelo painel de alertas do front-end, não por e-mail (api#158). GET /alerts (api#160)
+      soma os três tipos; "cliente contatado" existe só na revisão anual.
 
 security:
   - bearerAuth: []
@@ -1131,19 +1130,22 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /alerts/revisions:
+  /alerts:
     get:
       tags: [alerts]
-      summary: Lista os alertas de revisão anual por equipamento pendentes de contato
+      summary: Lista os alertas pendentes (OS parada, situação de equipamento, revisão anual)
       description: >
-        api#136 — disparados (mês 6 ou 11 desde a última manutenção preventiva concluída) e ainda
-        sem "cliente contatado". Provisório: uma issue futura substitui por um GET /alerts
-        unificado, somando os outros tipos de alerta internos (OS parada, situação do
-        equipamento), hoje sem endpoint de leitura.
-      operationId: listEquipmentRevisionAlerts
+        api#160 — só o que está pendente agora, do mais recente pro mais antigo (`notified_at`),
+        sem paginação. OS parada e situação de equipamento devolvem uma entrada por OS/equipamento
+        (o marco mais alto já vencido, não um por marco) e somem quando a OS muda de status, o
+        equipamento muda de situação ou a OS é cancelada/não aprovada/concluída. Revisão anual
+        some quando alguém marca "cliente contatado" ou quando uma resolução mais nova supera o
+        ciclo. `milestone_days` vem só nos dois primeiros tipos, `milestone`/`billing_notified_at`
+        só na revisão (`billing_notified_at` preenchido = mais de 7 dias sem contato).
+      operationId: listAlerts
       responses:
         "200":
-          description: Alertas pendentes de contato
+          description: Alertas pendentes
           content:
             application/json:
               schema:
@@ -1151,7 +1153,7 @@ paths:
                 properties:
                   data:
                     type: array
-                    items: { $ref: "#/components/schemas/EquipmentRevisionAlert" }
+                    items: { $ref: "#/components/schemas/Alert" }
         "403":
           $ref: "#/components/responses/Forbidden"
         "401":
@@ -1790,6 +1792,30 @@ components:
             description: "URL assinada própria desta entrada, ver GET /orders/{id}/pdf/{pdfId}/download",
           }
         expires_at: { type: string, format: date-time }
+
+    Alert:
+      type: object
+      description: Uma entrada de GET /alerts (api#160). `id` é da linha do alerta de cada tipo.
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [order_stalled, equipment_situation, equipment_revision] }
+        title: { type: string }
+        notified_at: { type: string, format: date-time }
+        milestone_days: { type: ["integer", "null"], description: "Marco vencido (7, 15, 30...) — só order_stalled e equipment_situation" }
+        milestone: { type: ["string", "null"], enum: [month_6, month_11, null], description: "Só equipment_revision" }
+        billing_notified_at: { type: ["string", "null"], format: date-time, description: "Só equipment_revision — mais de 7 dias sem contato" }
+        order:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            number: { type: integer }
+            client_name: { type: ["string", "null"] }
+        equipment:
+          type: ["object", "null"]
+          description: null em order_stalled
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
 
     EquipmentRevisionAlert:
       type: object

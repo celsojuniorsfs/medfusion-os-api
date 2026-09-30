@@ -355,32 +355,4 @@ class AlertsEquipmentRevisionTest extends TestCase
 
         $this->assertTrue($firstContactedAt->equalTo(EquipmentRevisionAlert::findOrFail($alert->id)->client_contacted_at));
     }
-
-    public function test_get_revisions_lists_only_pending_contact_and_rejects_technician(): void
-    {
-        $admin = User::findOrFail($this->aUserId(UserRole::Administrative, 'administrativo@medfusion.example'));
-        $technician = User::findOrFail($this->aUserId(UserRole::Technician, 'tecnico@medfusion.example'));
-        [$orderA, $equipmentA] = $this->anOrderWithAnEquipment(1514, preventiveMaintenance: true);
-        $this->resolve($orderA, $equipmentA, OrderEquipmentSituation::Completed);
-        [$orderB, $equipmentB] = $this->anOrderWithAnEquipment(1515, preventiveMaintenance: true);
-        $this->resolve($orderB, $equipmentB, OrderEquipmentSituation::Completed);
-
-        $this->travel(6)->months();
-        $this->travel(2)->days();
-        $this->artisan('alerts:check-equipment-revisions');
-
-        $alerts = EquipmentRevisionAlert::orderBy('order_id')->get();
-        $this->actingAs($admin, 'sanctum')
-            ->patchJson("/api/v1/alerts/revisions/{$alerts->first()->id}/contacted")
-            ->assertOk();
-
-        $response = $this->actingAs($admin, 'sanctum')->getJson('/api/v1/alerts/revisions');
-
-        $response->assertOk();
-        $response->assertJsonCount(1, 'data');
-
-        $this->actingAs($technician, 'sanctum')
-            ->getJson('/api/v1/alerts/revisions')
-            ->assertForbidden();
-    }
 }

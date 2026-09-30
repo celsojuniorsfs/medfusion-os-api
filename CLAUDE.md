@@ -287,6 +287,22 @@ confie — confirme rodando `\OpenTelemetry\SDK\Sdk::isDisabled()` de verdade, p
 `config('opentelemetry.disabled')` (o valor do NOSSO lado) pode estar certo enquanto o do SDK
 continua errado.
 
+## Migration nova: rode no MySQL de verdade, o SQLite dos testes não pega
+
+A suíte roda em SQLite em memória, mas produção (e o `docker compose`) é MySQL 8.4. Três
+migrations da api#136/#147 passaram verdes nos testes e quebraram no MySQL:
+
+- `DELETE ... WHERE id NOT IN (SELECT ... FROM mesma_tabela)` dá erro 1093 — use `fromSub`
+  (tabela derivada) na subquery.
+- `dropUnique` de um índice que sustenta uma FK dá erro 1553 — derrube a FK primeiro
+  (`dropForeign`), depois o índice, depois a coluna.
+- Nome de índice gerado pelo Laravel passa dos 64 caracteres (erro 1059) quando a tabela e as
+  colunas têm nome longo — passe um nome explícito curto ao `unique()`/`index()`.
+
+Toda migration nova precisa de `docker compose exec app php artisan migrate`, depois
+`migrate:rollback --step=1` e `migrate` de novo, antes de abrir a PR. DDL no MySQL não é
+transacional: uma migration que falha no meio deixa colunas/tabelas pela metade.
+
 ## Antes de assumir o estado de uma PR/issue
 
 Não confie em contexto de sessão anterior (resumo de conversa, plano salvo) para saber se uma PR

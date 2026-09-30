@@ -34,7 +34,8 @@ return new class extends Migration
             $table->timestamp('superseded_at')->nullable();
             $table->timestamps();
 
-            $table->unique(['equipment_id', 'base_date', 'milestone']);
+            // Nome explícito: o gerado pelo Laravel passa dos 64 caracteres que o MySQL aceita.
+            $table->unique(['equipment_id', 'base_date', 'milestone'], 'equipment_revision_alerts_unique_cycle');
         });
     }
 

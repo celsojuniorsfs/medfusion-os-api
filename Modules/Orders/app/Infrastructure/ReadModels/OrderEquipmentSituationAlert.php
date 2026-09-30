@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Modules\Equipments\Infrastructure\ReadModels\Equipment;
 
 /**
  * Rastro de idempotência do comando `orders:check-equipment-situations` (api#147) — não é
@@ -37,5 +38,13 @@ class OrderEquipmentSituationAlert extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
+    }
+
+    /**
+     * @return BelongsTo<Equipment, $this>
+     */
+    public function equipment(): BelongsTo
+    {
+        return $this->belongsTo(Equipment::class);
     }
 }
